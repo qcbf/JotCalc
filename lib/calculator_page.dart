@@ -115,6 +115,7 @@ class _CalculatorPageState extends State<CalculatorPage> {
     }
 
     final key = switch (event.logicalKey) {
+      LogicalKeyboardKey.delete => 'C',
       LogicalKeyboardKey.backspace => '⌫',
       LogicalKeyboardKey.enter || LogicalKeyboardKey.numpadEnter
           when scope.hasPrimaryFocus || _editorFocus.hasFocus =>
@@ -299,6 +300,35 @@ class _CalculatorPageState extends State<CalculatorPage> {
     if (_settings.persistHistory) _save();
   }
 
+  Future<void> _clearHistory() async {
+    final strings = AppStrings.of(context);
+    final confirmed = await showDialog<bool>(
+      context: context,
+      builder: (context) => AlertDialog(
+        scrollable: true,
+        title: Text(strings.clearHistoryConfirmation),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.pop(context, false),
+            child: Text(MaterialLocalizations.of(context).cancelButtonLabel),
+          ),
+          TextButton(
+            style: TextButton.styleFrom(foregroundColor: JotCalcColors.error),
+            onPressed: () => Navigator.pop(context, true),
+            child: Text(strings.clearHistory),
+          ),
+        ],
+      ),
+    );
+    if (!mounted || confirmed != true) return;
+
+    setState(() {
+      _history.clear();
+      _recordedCurrentResult = false;
+    });
+    if (_settings.persistHistory) await _save();
+  }
+
   Future<void> _copyValue(String value) async {
     try {
       await Clipboard.setData(ClipboardData(text: value.replaceAll('−', '-')));
@@ -393,6 +423,13 @@ class _CalculatorPageState extends State<CalculatorPage> {
   @override
   Widget build(BuildContext context) {
     final strings = AppStrings.of(context);
+    final clearHistoryButton = IconButton(
+      tooltip: strings.clearHistory,
+      onPressed: _history.isEmpty ? null : _clearHistory,
+      color: JotCalcColors.muted,
+      padding: EdgeInsets.zero,
+      icon: const Icon(Icons.delete_outline),
+    );
     return ColoredBox(
       color: Colors.white,
       child: SafeArea(
@@ -428,10 +465,16 @@ class _CalculatorPageState extends State<CalculatorPage> {
                         builder: (context) => HistoryPane(
                           header: ListTile(
                             title: Text(strings.history),
-                            trailing: IconButton(
-                              tooltip: strings.closeHistory,
-                              onPressed: Scaffold.of(context).closeDrawer,
-                              icon: const Icon(Icons.close),
+                            trailing: Row(
+                              mainAxisSize: MainAxisSize.min,
+                              children: [
+                                clearHistoryButton,
+                                IconButton(
+                                  tooltip: strings.closeHistory,
+                                  onPressed: Scaffold.of(context).closeDrawer,
+                                  icon: const Icon(Icons.close),
+                                ),
+                              ],
                             ),
                           ),
                           entries: _history,
@@ -458,19 +501,24 @@ class _CalculatorPageState extends State<CalculatorPage> {
                           header: Row(
                             mainAxisAlignment: MainAxisAlignment.spaceBetween,
                             children: [
-                              SettingsButton(onPressed: _openSettings),
-                              HistoryResizeHandle(
-                                fraction: historyWidth / width,
-                                onDrag: resize,
-                                onDragDone: _finishResizing,
-                                onWiden: () {
-                                  resize(16);
-                                  _finishResizing();
-                                },
-                                onNarrow: () {
-                                  resize(-16);
-                                  _finishResizing();
-                                },
+                              Flexible(
+                                child: SettingsButton(onPressed: _openSettings),
+                              ),
+                              Flexible(child: clearHistoryButton),
+                              Flexible(
+                                child: HistoryResizeHandle(
+                                  fraction: historyWidth / width,
+                                  onDrag: resize,
+                                  onDragDone: _finishResizing,
+                                  onWiden: () {
+                                    resize(16);
+                                    _finishResizing();
+                                  },
+                                  onNarrow: () {
+                                    resize(-16);
+                                    _finishResizing();
+                                  },
+                                ),
                               ),
                             ],
                           ),

@@ -26,6 +26,7 @@ class SettingsButton extends StatelessWidget {
   Widget build(BuildContext context) => IconButton(
     tooltip: AppStrings.of(context).settings,
     onPressed: onPressed,
+    padding: EdgeInsets.zero,
     icon: const Icon(Icons.more_horiz, color: JotCalcColors.muted),
   );
 }

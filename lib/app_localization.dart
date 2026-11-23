@@ -46,6 +46,9 @@ class AppStrings {
 
   String get history => _translate('历史记录', 'History');
   String get closeHistory => _translate('关闭历史记录', 'Close history');
+  String get clearHistory => _translate('清空历史记录', 'Clear history');
+  String get clearHistoryConfirmation =>
+      _translate('清空全部历史记录？', 'Clear all history?');
   String get noHistory => _translate('暂无记录', 'No history yet');
   String get resizeHistory => _translate('拖动调整历史栏宽度', 'Drag to resize history');
   String historyWidth(int percent) =>

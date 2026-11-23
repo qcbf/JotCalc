@@ -148,6 +148,10 @@ void main() {
     expect(_display(tester).controller.text, '11');
     await type(LogicalKeyboardKey.backspace);
     expect(_display(tester).controller.text, '1');
+    await type(LogicalKeyboardKey.delete);
+    expect(_display(tester).controller.text, isEmpty);
+    expect(_display(tester).result, isNull);
+    expect(saves, hasLength(2));
   });
 
   testWidgets(
@@ -235,7 +239,7 @@ void main() {
   );
 
   testWidgets(
-    'recalls history and applies delete confirmation for the running session',
+    'skips individual delete prompts but always confirms clearing history',
     (tester) async {
       final saves = <CalculatorSnapshot>[];
       await _start(
@@ -276,6 +280,27 @@ void main() {
       await tester.pumpAndSettle();
       expect(find.byType(AlertDialog), findsNothing);
       expect(saves.last.history.single.result, '7');
+
+      final clearHistory = find.byWidgetPredicate(
+        (widget) => widget is IconButton && widget.tooltip == '清空历史记录',
+      );
+      await tester.tap(clearHistory);
+      await tester.pumpAndSettle();
+      expect(find.text('清空全部历史记录？'), findsOneWidget);
+      await tester.tap(find.text('取消'));
+      await tester.pumpAndSettle();
+      expect(_historyText('7'), findsOneWidget);
+      expect(saves, hasLength(2));
+
+      await tester.tap(clearHistory);
+      await tester.pumpAndSettle();
+      await tester.tap(find.text('清空历史记录'));
+      await tester.pumpAndSettle();
+      expect(_historyText('暂无记录'), findsOneWidget);
+      expect(saves.last.history, isEmpty);
+      expect(tester.widget<IconButton>(clearHistory).onPressed, isNull);
+      expect(_display(tester).controller.text, '2×4');
+      expect(_display(tester).isResult, isTrue);
     },
   );
 
