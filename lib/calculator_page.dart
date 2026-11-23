@@ -56,7 +56,6 @@ class _CalculatorPageState extends State<CalculatorPage> {
     _settings = widget.initialSnapshot.settings;
     _history = List.of(widget.initialSnapshot.history);
     _editor.addListener(_evaluateDraft);
-    _editorFocus.addListener(_onEditorFocus);
   }
 
   @override
@@ -90,10 +89,6 @@ class _CalculatorPageState extends State<CalculatorPage> {
     });
   }
 
-  void _onEditorFocus() {
-    if (_editorFocus.hasFocus) _editExpression();
-  }
-
   void _editExpression() {
     if (!_isResult) return;
     setState(() {
@@ -107,6 +102,38 @@ class _CalculatorPageState extends State<CalculatorPage> {
       text: expression,
       selection: TextSelection.collapsed(offset: offset ?? expression.length),
     );
+  }
+
+  KeyEventResult _onHardwareKey(FocusNode scope, KeyEvent event) {
+    if (event is KeyUpEvent || event.synthesized) return KeyEventResult.ignored;
+
+    final keyboard = HardwareKeyboard.instance;
+    if (keyboard.isControlPressed ||
+        keyboard.isMetaPressed ||
+        keyboard.isAltPressed) {
+      return KeyEventResult.ignored;
+    }
+
+    final key = switch (event.logicalKey) {
+      LogicalKeyboardKey.backspace => '⌫',
+      LogicalKeyboardKey.enter || LogicalKeyboardKey.numpadEnter
+          when scope.hasPrimaryFocus || _editorFocus.hasFocus =>
+        '=',
+      _ => switch (event.character) {
+        '-' => '−',
+        '*' => '×',
+        '/' => '÷',
+        final String character
+            when character.length == 1 &&
+                '0123456789+−×÷.%'.contains(character) =>
+          character,
+        _ => null,
+      },
+    };
+    if (key == null) return KeyEventResult.ignored;
+
+    _onKey(key);
+    return KeyEventResult.handled;
   }
 
   void _onKey(String key) {
@@ -418,151 +445,157 @@ class _CalculatorPageState extends State<CalculatorPage> {
                       ),
                     )
                   : null,
-              body: Row(
-                crossAxisAlignment: CrossAxisAlignment.stretch,
-                children: [
-                  if (inlineHistory)
-                    SizedBox(
-                      width: historyWidth,
-                      child: HistoryPane(
-                        header: Row(
-                          mainAxisAlignment: MainAxisAlignment.spaceBetween,
-                          children: [
-                            SettingsButton(onPressed: _openSettings),
-                            HistoryResizeHandle(
-                              fraction: historyWidth / width,
-                              onDrag: resize,
-                              onDragDone: _finishResizing,
-                              onWiden: () {
-                                resize(16);
-                                _finishResizing();
-                              },
-                              onNarrow: () {
-                                resize(-16);
-                                _finishResizing();
-                              },
-                            ),
-                          ],
-                        ),
-                        entries: _history,
-                        controller: _historyScroll,
-                        onSelect: _recall,
-                        onDelete: _deleteEntry,
-                        showDivider: true,
-                      ),
-                    ),
-                  Expanded(
-                    child: Column(
-                      children: [
-                        if (!inlineHistory)
-                          Row(
+              body: FocusScope(
+                autofocus: true,
+                onKeyEvent: _onHardwareKey,
+                child: Row(
+                  crossAxisAlignment: CrossAxisAlignment.stretch,
+                  children: [
+                    if (inlineHistory)
+                      SizedBox(
+                        width: historyWidth,
+                        child: HistoryPane(
+                          header: Row(
+                            mainAxisAlignment: MainAxisAlignment.spaceBetween,
                             children: [
                               SettingsButton(onPressed: _openSettings),
-                              if (drawerHistory)
-                                Builder(
-                                  builder: (context) => IconButton(
-                                    tooltip: strings.history,
-                                    onPressed: Scaffold.of(context).openDrawer,
-                                    icon: const Icon(
-                                      Icons.history_rounded,
-                                      color: JotCalcColors.muted,
-                                    ),
-                                  ),
-                                ),
+                              HistoryResizeHandle(
+                                fraction: historyWidth / width,
+                                onDrag: resize,
+                                onDragDone: _finishResizing,
+                                onWiden: () {
+                                  resize(16);
+                                  _finishResizing();
+                                },
+                                onNarrow: () {
+                                  resize(-16);
+                                  _finishResizing();
+                                },
+                              ),
                             ],
                           ),
-                        Expanded(
-                          child: Padding(
-                            padding: EdgeInsets.fromLTRB(
-                              padding,
-                              inlineHistory ? padding : 0,
-                              padding,
-                              padding,
-                            ),
-                            child: LayoutBuilder(
-                              builder: (context, desk) {
-                                final panelMin = math.min(
-                                  86.0,
-                                  desk.maxHeight * 0.35,
-                                );
-                                final panelGap = compact ? 6.0 : 8.0;
-                                final keypadHeight = math.max(
-                                  0.0,
-                                  math.min(
-                                    preferredKeypadHeight,
-                                    desk.maxHeight - panelMin - panelGap,
+                          entries: _history,
+                          controller: _historyScroll,
+                          onSelect: _recall,
+                          onDelete: _deleteEntry,
+                          showDivider: true,
+                        ),
+                      ),
+                    Expanded(
+                      child: Column(
+                        children: [
+                          if (!inlineHistory)
+                            Row(
+                              children: [
+                                SettingsButton(onPressed: _openSettings),
+                                if (drawerHistory)
+                                  Builder(
+                                    builder: (context) => IconButton(
+                                      tooltip: strings.history,
+                                      onPressed: Scaffold.of(context)
+                                          .openDrawer,
+                                      icon: const Icon(
+                                        Icons.history_rounded,
+                                        color: JotCalcColors.muted,
+                                      ),
+                                    ),
                                   ),
-                                );
-                                final value = _value;
-                                return Column(
-                                  crossAxisAlignment:
-                                      CrossAxisAlignment.stretch,
-                                  spacing: panelGap,
-                                  children: [
-                                    Expanded(
-                                      child: Stack(
-                                        fit: StackFit.expand,
-                                        children: [
-                                          CalculationDisplay(
-                                            controller: _editor,
-                                            focusNode: _editorFocus,
-                                            onEdit: _editExpression,
-                                            isResult: _isResult,
-                                            largeFontSize: compact
-                                                ? 28
-                                                : (landscape ? 34 : 40),
-                                            smallFontSize: compact
-                                                ? 13
-                                                : (landscape ? 14 : 16),
-                                            result: value,
-                                            error: _errorMessage(strings),
-                                            onCopy: value == null
-                                                ? null
-                                                : () => _copyValue(value),
-                                          ),
-                                          if (value != null &&
-                                              _copiedValue == value)
-                                            Positioned(
-                                              top: 8,
-                                              left: 12,
-                                              child: IgnorePointer(
-                                                child: Semantics(
-                                                  liveRegion: true,
-                                                  child: Text(
-                                                    strings.copied,
-                                                    style: const TextStyle(
-                                                      color:
-                                                          JotCalcColors.accent,
-                                                      fontSize: 12,
+                              ],
+                            ),
+                          Expanded(
+                            child: Padding(
+                              padding: EdgeInsets.fromLTRB(
+                                padding,
+                                inlineHistory ? padding : 0,
+                                padding,
+                                padding,
+                              ),
+                              child: LayoutBuilder(
+                                builder: (context, desk) {
+                                  final panelMin = math.min(
+                                    86.0,
+                                    desk.maxHeight * 0.35,
+                                  );
+                                  final panelGap = compact ? 6.0 : 8.0;
+                                  final keypadHeight = math.max(
+                                    0.0,
+                                    math.min(
+                                      preferredKeypadHeight,
+                                      desk.maxHeight - panelMin - panelGap,
+                                    ),
+                                  );
+                                  final value = _value;
+                                  return Column(
+                                    crossAxisAlignment:
+                                        CrossAxisAlignment.stretch,
+                                    spacing: panelGap,
+                                    children: [
+                                      Expanded(
+                                        child: Stack(
+                                          fit: StackFit.expand,
+                                          children: [
+                                            CalculationDisplay(
+                                              controller: _editor,
+                                              focusNode: _editorFocus,
+                                              onEdit: _editExpression,
+                                              isResult: _isResult,
+                                              largeFontSize: compact
+                                                  ? 28
+                                                  : (landscape ? 34 : 40),
+                                              smallFontSize: compact
+                                                  ? 13
+                                                  : (landscape ? 14 : 16),
+                                              result: value,
+                                              error: _errorMessage(strings),
+                                              onCopy: value == null
+                                                  ? null
+                                                  : () => _copyValue(value),
+                                            ),
+                                            if (value != null &&
+                                                _copiedValue == value)
+                                              Positioned(
+                                                top: 8,
+                                                left: 12,
+                                                child: IgnorePointer(
+                                                  child: Semantics(
+                                                    liveRegion: true,
+                                                    child: Text(
+                                                      strings.copied,
+                                                      style: const TextStyle(
+                                                        color: JotCalcColors
+                                                            .accent,
+                                                        fontSize: 12,
+                                                      ),
                                                     ),
                                                   ),
                                                 ),
                                               ),
-                                            ),
-                                        ],
+                                          ],
+                                        ),
                                       ),
-                                    ),
-                                    SizedBox(
-                                      height: keypadHeight,
-                                      child: CalculatorKeypad(
-                                        gap: gap,
-                                        onKey: _onKey,
-                                        onHoldEquals:
-                                            _settings.saveHistoryOnLongPress
-                                            ? () => _confirm(addToHistory: true)
-                                            : null,
+                                      SizedBox(
+                                        height: keypadHeight,
+                                        child: CalculatorKeypad(
+                                          gap: gap,
+                                          onKey: _onKey,
+                                          onHoldEquals:
+                                              _settings.saveHistoryOnLongPress
+                                              ? () =>
+                                                    _confirm(addToHistory: true)
+                                              : null,
+                                        ),
                                       ),
-                                    ),
-                                  ],
-                                );
-                              },
+                                    ],
+                                  );
+                                },
+                              ),
                             ),
                           ),
-                        ),
-                      ],
+                        ],
+                      ),
                     ),
-                  ),
-                ],
+                  ],
+                ),
               ),
             );
           },

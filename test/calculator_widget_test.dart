@@ -97,6 +97,92 @@ void main() {
     },
   );
 
+  testWidgets('hardware input uses the keypad rules and result transitions', (
+    tester,
+  ) async {
+    final saves = <CalculatorSnapshot>[];
+    await _start(tester, saves);
+    expect(_display(tester).focusNode.hasFocus, isFalse);
+
+    Future<void> type(LogicalKeyboardKey key, [String? character]) async {
+      expect(await tester.sendKeyEvent(key, character: character), isTrue);
+      await tester.pump();
+    }
+
+    await type(LogicalKeyboardKey.digit1, '1');
+    await tester.sendKeyDownEvent(LogicalKeyboardKey.shiftLeft);
+    await type(LogicalKeyboardKey.equal, '+');
+    await tester.sendKeyUpEvent(LogicalKeyboardKey.shiftLeft);
+    await type(LogicalKeyboardKey.digit2, '2');
+    await type(LogicalKeyboardKey.numpadMultiply, '*');
+    await type(LogicalKeyboardKey.digit3, '3');
+    await type(LogicalKeyboardKey.slash, '/');
+    await type(LogicalKeyboardKey.digit2, '2');
+    await type(LogicalKeyboardKey.minus, '-');
+    await type(LogicalKeyboardKey.digit0, '0');
+    expect(_display(tester).controller.text, '1+2×3÷2−0');
+    expect(_display(tester).isResult, isFalse);
+    await tester.sendKeyEvent(LogicalKeyboardKey.equal, character: '=');
+    await tester.pump();
+    expect(_display(tester).isResult, isFalse);
+    expect(saves, isEmpty);
+    await type(LogicalKeyboardKey.enter);
+    expect(saves.single.history.single.result, '4');
+
+    // The browser can return focus to the editor after confirmation.
+    _display(tester).focusNode.requestFocus();
+    await tester.pump();
+    expect(_display(tester).isResult, isTrue);
+
+    await type(LogicalKeyboardKey.numpadAdd, '+');
+    await type(LogicalKeyboardKey.numpadDecimal, '.');
+    await type(LogicalKeyboardKey.numpad5, '5');
+    await type(LogicalKeyboardKey.numpadEnter);
+    expect(saves.last.history.last.expression, '4+0.5');
+    expect(_display(tester).result, '4.5');
+
+    await tester.sendKeyDownEvent(LogicalKeyboardKey.numpad1, character: '1');
+    await tester.sendKeyRepeatEvent(LogicalKeyboardKey.numpad1, character: '1');
+    await tester.sendKeyUpEvent(LogicalKeyboardKey.numpad1);
+    await tester.pump();
+    expect(_display(tester).controller.text, '11');
+    await type(LogicalKeyboardKey.backspace);
+    expect(_display(tester).controller.text, '1');
+  });
+
+  testWidgets(
+    'hardware input replaces a selection and stays on the calculator',
+    (tester) async {
+      await _start(tester, []);
+      await _press(tester, ['2', '+', '3', '4']);
+      _display(tester).controller.selection = const TextSelection(
+        baseOffset: 2,
+        extentOffset: 4,
+      );
+      await tester.sendKeyEvent(LogicalKeyboardKey.digit5, character: '5');
+      await tester.pump();
+      expect(_display(tester).controller.text, '2+5');
+
+      await tester.sendKeyDownEvent(LogicalKeyboardKey.controlLeft);
+      await tester.sendKeyEvent(LogicalKeyboardKey.digit9, character: '9');
+      await tester.sendKeyUpEvent(LogicalKeyboardKey.controlLeft);
+      await tester.pump();
+      expect(_display(tester).controller.text, '2+5');
+
+      await tester.tap(find.byTooltip('设置'));
+      await tester.pumpAndSettle();
+      await tester.sendKeyEvent(LogicalKeyboardKey.digit9, character: '9');
+      await tester.tap(find.byType(BackButton));
+      await tester.pumpAndSettle();
+      expect(_display(tester).controller.text, '2+5');
+
+      await tester.sendKeyEvent(LogicalKeyboardKey.enter);
+      await tester.pump();
+      expect(_display(tester).isResult, isTrue);
+      expect(_display(tester).result, '7');
+    },
+  );
+
   testWidgets(
     'manual history can save an already confirmed value exactly once and copy it',
     (tester) async {

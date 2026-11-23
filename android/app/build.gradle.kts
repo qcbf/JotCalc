@@ -22,6 +22,13 @@ android {
     }
 }
 
+androidComponents {
+    onVariants(selector().withBuildType("release")) { variant ->
+        // Compress native libraries in APKs and let Android extract them during installation.
+        variant.packaging.jniLibs.useLegacyPackaging.set(true)
+    }
+}
+
 flutter {
     source = "../.."
 }
