@@ -67,6 +67,10 @@ class AppStrings {
           '单击历史记录可复制结果，双击可载入计算区，长按可删除。',
           '拖动历史栏右上角可调整宽度。',
         ];
+  String get advancedInputInstructions => _translate(
+    '键盘支持括号、abs(-3) 和 pow(2, 8) 等写法。输入 17 mod 5 取模，位运算符有 &、|、^、~、<<、>>。',
+    'Use the keyboard for parentheses, abs(-3), and pow(2, 8). Type 17 mod 5 for modulo. Bitwise operators are &, |, ^, ~, <<, and >>.',
+  );
   String get about => _translate('关于', 'About');
   String get projectPage => _translate('GitHub 项目主页', 'JotCalc on GitHub');
   String get openProjectFailed =>
@@ -92,6 +96,8 @@ class AppStrings {
   String get result => _translate('结果', 'Result');
   String get previewResult => _translate('预览结果', 'Result preview');
   String get calculationError => _translate('计算错误', 'Calculation error');
+  String get calculationOutOfRange =>
+      _translate('计算超出范围', 'Calculation exceeds supported range');
   String get incompleteExpression =>
       _translate('算式尚未输完', 'Incomplete expression');
   String get divisionByZero => _translate('不能除以零', 'Cannot divide by zero');

@@ -10,10 +10,12 @@ class SettingsPage extends StatefulWidget {
     super.key,
     required this.initialSettings,
     required this.onChanged,
+    required this.allowAdvancedInput,
   });
 
   final CalculatorSettings initialSettings;
   final ValueChanged<CalculatorSettings> onChanged;
+  final bool allowAdvancedInput;
 
   @override
   State<SettingsPage> createState() => _SettingsPageState();
@@ -91,6 +93,8 @@ class _SettingsPageState extends State<SettingsPage> {
           children: [
             for (final instruction in strings.shortcutInstructions)
               Text(instruction),
+            if (widget.allowAdvancedInput)
+              Text(strings.advancedInputInstructions),
           ],
         ),
         actions: [

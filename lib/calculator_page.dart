@@ -1,6 +1,7 @@
 import 'dart:async';
 import 'dart:math' as math;
 
+import 'package:flutter/foundation.dart' show defaultTargetPlatform, kIsWeb;
 import 'package:flutter/gestures.dart' show kLongPressTimeout;
 import 'package:flutter/services.dart';
 import 'package:material_ui/material_ui.dart';
@@ -39,6 +40,11 @@ class _CalculatorPageState extends State<CalculatorPage> {
   final _historyScroll = ScrollController();
   final _scaffoldKey = GlobalKey<ScaffoldState>();
 
+  late final bool _allowAdvancedInput = switch (defaultTargetPlatform) {
+    TargetPlatform.windows => true,
+    TargetPlatform.macOS || TargetPlatform.linux => kIsWeb,
+    _ => false,
+  };
   late final AppLifecycleListener _lifecycle;
   late CalculatorSettings _settings;
   late final List<HistoryEntry> _history;
@@ -84,7 +90,10 @@ class _CalculatorPageState extends State<CalculatorPage> {
     String? value;
     CalculationIssue? issue;
     try {
-      value = evaluateExpression(expression);
+      value = evaluateExpression(
+        expression,
+        allowAdvanced: _allowAdvancedInput,
+      );
     } on CalculationException catch (error) {
       issue = error.issue;
     }
@@ -171,6 +180,11 @@ class _CalculatorPageState extends State<CalculatorPage> {
             when character.length == 1 &&
                 '0123456789+−×÷.%'.contains(character) =>
           character,
+        final String character
+            when _allowAdvancedInput &&
+                character.length == 1 &&
+                (character == ' ' || hasAdvancedSyntax(character)) =>
+          character.toLowerCase(),
         _ => null,
       },
     };
@@ -227,13 +241,17 @@ class _CalculatorPageState extends State<CalculatorPage> {
           offset: _editor.text.length,
         );
       } else {
-        final continueFromResult = _binaryOperators.contains(key) || key == '%';
+        final continueFromResult =
+            _binaryOperators.contains(key) ||
+            key == '%' ||
+            (_allowAdvancedInput && '^&|<>m '.contains(key));
         _replaceExpression(continueFromResult ? previousResult : '');
       }
     }
 
     _editorFocus.requestFocus();
     final draft = _editor.text;
+    final advancedDraft = _allowAdvancedInput && hasAdvancedSyntax(draft);
     final selection = _editor.selection;
     var start = selection.isValid ? selection.start : draft.length;
     final end = selection.isValid ? selection.end : draft.length;
@@ -241,13 +259,13 @@ class _CalculatorPageState extends State<CalculatorPage> {
 
     if (key == '⌫') {
       if (start == end) {
-        while (start > 0 && draft[start - 1] == ' ') {
+        while (!advancedDraft && start > 0 && draft[start - 1] == ' ') {
           start--;
         }
         if (start > 0) start--;
       }
       insertion = '';
-    } else if (start == end && end == draft.length) {
+    } else if (!advancedDraft && start == end && end == draft.length) {
       final tail = draft.trimRight();
       if (key == '.') {
         final literal = _trailingNumber.firstMatch(tail)?.group(0);
@@ -425,6 +443,7 @@ class _CalculatorPageState extends State<CalculatorPage> {
       MaterialPageRoute(
         builder: (context) => SettingsPage(
           initialSettings: _settings,
+          allowAdvancedInput: _allowAdvancedInput,
           onChanged: (settings) {
             setState(() => _settings = settings);
             widget.onSettingsChanged(settings);
@@ -490,6 +509,7 @@ class _CalculatorPageState extends State<CalculatorPage> {
       : switch (_issue) {
           CalculationIssue.incomplete => strings.incompleteExpression,
           CalculationIssue.divisionByZero => strings.divisionByZero,
+          CalculationIssue.outOfRange => strings.calculationOutOfRange,
           _ => strings.invalidExpression,
         };
 
@@ -672,6 +692,8 @@ class _CalculatorPageState extends State<CalculatorPage> {
                                               focusNode: _editorFocus,
                                               onEdit: _editExpression,
                                               isResult: _isResult,
+                                              allowAdvancedInput:
+                                                  _allowAdvancedInput,
                                               largeFontSize: compact
                                                   ? 28
                                                   : (landscape ? 34 : 40),

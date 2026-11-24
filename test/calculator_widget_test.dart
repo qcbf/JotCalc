@@ -1,5 +1,6 @@
 import 'dart:convert';
 
+import 'package:flutter/foundation.dart' show kIsWeb;
 import 'package:flutter/gestures.dart'
     show
         kDoubleTapMinTime,
@@ -263,6 +264,73 @@ void main() {
     expect(_display(tester).result, isNull);
     expect(saves, hasLength(2));
   });
+
+  testWidgets(
+    'desktop advanced keyboard input calculates, continues, and accepts pasted expressions',
+    (tester) async {
+      final saves = <CalculatorSnapshot>[];
+      await _start(tester, saves);
+
+      for (final (key, character) in [
+        (LogicalKeyboardKey.keyP, 'p'),
+        (LogicalKeyboardKey.keyO, 'o'),
+        (LogicalKeyboardKey.keyW, 'w'),
+        (LogicalKeyboardKey.digit9, '('),
+        (LogicalKeyboardKey.digit2, '2'),
+        (LogicalKeyboardKey.comma, ','),
+        (LogicalKeyboardKey.space, ' '),
+        (LogicalKeyboardKey.digit3, '3'),
+        (LogicalKeyboardKey.digit0, ')'),
+      ]) {
+        await tester.sendKeyEvent(key, character: character);
+        await tester.pump();
+      }
+      expect(_display(tester).controller.text, 'pow(2, 3)');
+      expect(_display(tester).result, '8');
+      await tester.sendKeyEvent(LogicalKeyboardKey.enter);
+      await tester.pump();
+      expect(saves.single.history.single.result, '8');
+
+      await tester.sendKeyEvent(LogicalKeyboardKey.digit6, character: '^');
+      await tester.pump();
+      await tester.sendKeyEvent(LogicalKeyboardKey.digit3, character: '3');
+      await tester.pump();
+      expect(_display(tester).controller.text, '8^3');
+      expect(_display(tester).result, '11');
+
+      await tester.enterText(find.byType(TextField), 'ABS(-3) + 17 mod 5');
+      await tester.pump();
+      expect(_display(tester).controller.text, 'ABS(−3) + 17 mod 5');
+      expect(_display(tester).result, '5');
+    },
+    variant: const TargetPlatformVariant(
+      kIsWeb
+          ? {TargetPlatform.windows, TargetPlatform.macOS, TargetPlatform.linux}
+          : {TargetPlatform.windows},
+    ),
+  );
+
+  testWidgets(
+    'mobile keeps basic input for hardware keys and pasted expressions',
+    (tester) async {
+      await _start(tester, []);
+      await _press(tester, ['2', '0', '0', '+', '1', '0', '%']);
+      await tester.sendKeyEvent(LogicalKeyboardKey.digit9, character: '(');
+      await tester.sendKeyEvent(LogicalKeyboardKey.keyP, character: 'p');
+      await tester.pump();
+      expect(_display(tester).controller.text, '200+10%');
+      expect(_display(tester).result, '220');
+
+      await tester.enterText(find.byType(TextField), 'pow(2, 3)');
+      await tester.pump();
+      expect(_display(tester).controller.text, '200+10%');
+      expect(_display(tester).result, '220');
+    },
+    variant: const TargetPlatformVariant({
+      TargetPlatform.android,
+      TargetPlatform.iOS,
+    }),
+  );
 
   testWidgets(
     'hardware input replaces a selection and stays on the calculator',

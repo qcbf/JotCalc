@@ -7,6 +7,7 @@ import 'package:flutter/services.dart';
 import 'package:material_ui/material_ui.dart';
 
 import 'app_localization.dart';
+import 'calculation.dart';
 import 'calculator_store.dart';
 
 const _tabularFigures = [FontFeature.tabularFigures()];
@@ -364,29 +365,30 @@ class CalculationDisplay extends StatelessWidget {
     required this.isResult,
     required this.largeFontSize,
     required this.smallFontSize,
+    this.allowAdvancedInput = false,
     this.result,
     this.error,
     this.onCopy,
   });
 
-  static final _allowedCharacters = RegExp(r'^[0-9.+−×÷% ]*$');
-  static final _expressionFormatter = TextInputFormatter.withFunction((
-    previous,
-    next,
-  ) {
-    final text = next.text
-        .replaceAll('-', '−')
-        .replaceAll('*', '×')
-        .replaceAll('/', '÷');
-    return _allowedCharacters.hasMatch(text)
-        ? next.copyWith(text: text)
-        : previous;
-  });
+  static final _expressionFormatter = _formatter(RegExp(r'^[0-9.+−×÷% ]*$'));
+  static final _advancedExpressionFormatter = _formatter(
+    RegExp(r'^[0-9A-Za-z.+−×÷%(),&|^~<> ]*$'),
+  );
+
+  static TextInputFormatter _formatter(RegExp allowedCharacters) =>
+      TextInputFormatter.withFunction((previous, next) {
+        final text = normalizeExpression(next.text);
+        return allowedCharacters.hasMatch(text)
+            ? next.copyWith(text: text)
+            : previous;
+      });
 
   final TextEditingController controller;
   final FocusNode focusNode;
   final VoidCallback onEdit;
   final bool isResult;
+  final bool allowAdvancedInput;
   final double largeFontSize;
   final double smallFontSize;
   final String? result;
@@ -432,7 +434,11 @@ class CalculationDisplay extends StatelessWidget {
                         onTap: onEdit,
                         showCursor: !isResult,
                         keyboardType: TextInputType.none,
-                        inputFormatters: [_expressionFormatter],
+                        inputFormatters: [
+                          allowAdvancedInput
+                              ? _advancedExpressionFormatter
+                              : _expressionFormatter,
+                        ],
                         autocorrect: false,
                         enableSuggestions: false,
                         maxLines: null,
