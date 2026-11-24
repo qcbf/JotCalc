@@ -30,7 +30,7 @@ jobs:
       - name: Check out the release tag
         uses: actions/checkout@v4
         with:
-          ref: ${{ inputs.tag || github.ref }}
+          ref: refs/tags/${{ env.RELEASE_TAG }}
 
       - name: Validate release tag
         shell: bash
@@ -39,7 +39,7 @@ jobs:
             echo "Release tags must use vX.Y.Z, received $RELEASE_TAG"
             exit 1
           fi
-          if [[ "$(git describe --tags --exact-match HEAD 2>/dev/null)" != "$RELEASE_TAG" ]]; then
+          if [[ "$(git rev-parse --verify "refs/tags/${RELEASE_TAG}^{commit}")" != "$(git rev-parse HEAD)" ]]; then
             echo "The checked out commit is not exactly tagged $RELEASE_TAG"
             exit 1
           fi
@@ -60,7 +60,6 @@ jobs:
         run: flutter pub get
 
       - name: Configure Android signing
-        if: ${{ secrets.ANDROID_KEYSTORE_BASE64 != '' }}
         shell: bash
         env:
           ANDROID_KEYSTORE_BASE64: ${{ secrets.ANDROID_KEYSTORE_BASE64 }}
@@ -68,6 +67,15 @@ jobs:
           ANDROID_KEY_PASSWORD: ${{ secrets.ANDROID_KEY_PASSWORD }}
           ANDROID_STORE_PASSWORD: ${{ secrets.ANDROID_STORE_PASSWORD }}
         run: |
+          if [[ -z "$ANDROID_KEYSTORE_BASE64$ANDROID_KEY_ALIAS$ANDROID_KEY_PASSWORD$ANDROID_STORE_PASSWORD" ]]; then
+            echo "Using Android debug signing."
+            exit 0
+          fi
+          if [[ -z "$ANDROID_KEYSTORE_BASE64" || -z "$ANDROID_KEY_ALIAS" ||
+                -z "$ANDROID_KEY_PASSWORD" || -z "$ANDROID_STORE_PASSWORD" ]]; then
+            echo "Configure all four Android signing secrets before publishing with a release key."
+            exit 1
+          fi
           printf '%s' "$ANDROID_KEYSTORE_BASE64" | base64 --decode > android/app/release.keystore
           cat > android/key.properties <<EOF
           storePassword=$ANDROID_STORE_PASSWORD
@@ -86,13 +94,12 @@ jobs:
         shell: bash
         run: |
           mkdir -p build/release-assets
-          (cd build/web-release && zip -9 -r "../jotcalc-${RELEASE_TAG}-web.zip" .) >/dev/null
+          (cd build/web-release && zip -q -9 -r "../release-assets/jotcalc-${RELEASE_TAG}-web.zip" .)
           for abi in arm64-v8a armeabi-v7a x86_64; do
             cp "build/app/outputs/flutter-apk/app-${abi}-release.apk" \
               "build/release-assets/jotcalc-${RELEASE_TAG}-${abi}.apk"
           done
-          cp "build/jotcalc-${RELEASE_TAG}-web.zip" build/release-assets/
-          sha256sum build/release-assets/* > "build/release-assets/jotcalc-${RELEASE_TAG}-SHA256SUMS.txt"
+          (cd build/release-assets && sha256sum *.apk *.zip > "jotcalc-${RELEASE_TAG}-SHA256SUMS.txt")
 
       - name: Publish GitHub Release
         uses: softprops/action-gh-release@v2

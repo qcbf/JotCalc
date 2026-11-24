@@ -25,16 +25,14 @@ function Test-GitTagExists {
         [Parameter(Mandatory = $true)][string]$Tag
     )
 
-    $local = & git rev-parse --verify --quiet "refs/tags/$Tag" 2>$null
-    if ($LASTEXITCODE -eq 0) {
+    $tagRef = "refs/tags/$Tag"
+    $localRefs = Invoke-GitText @('for-each-ref', '--format=%(refname)', $tagRef)
+    if (($localRefs -split '\r?\n') -contains $tagRef) {
         return $true
     }
 
-    $remote = & git ls-remote --tags $RemoteName "refs/tags/$Tag" 2>$null
-    if ($LASTEXITCODE -ne 0) {
-        throw "Could not query tags on remote '$RemoteName'."
-    }
-    return -not [string]::IsNullOrWhiteSpace(($remote | Out-String))
+    $remoteRefs = Invoke-GitText @('ls-remote', '--tags', $RemoteName, $tagRef)
+    return -not [string]::IsNullOrWhiteSpace($remoteRefs)
 }
 
 $projectRoot = Split-Path -Parent $PSScriptRoot
@@ -61,7 +59,7 @@ try {
     $pubspec = [IO.File]::ReadAllText($pubspecPath)
     $versionMatch = [regex]::Match(
         $pubspec,
-        '(?m)^version:\s*(?<major>\d+)\.(?<minor>\d+)\.(?<patch>\d+)\+(?<build>\d+)\s*$'
+        '(?m)^version:[ \t]*(?<major>\d+)\.(?<minor>\d+)\.(?<patch>\d+)\+(?<build>\d+)(?=[ \t]*\r?$)'
     )
     if (-not $versionMatch.Success) {
         throw 'Could not find a version in pubspec.yaml. Expected MAJOR.MINOR.PATCH+BUILD.'
@@ -91,11 +89,7 @@ try {
 
     $nextBuild = $currentBuild + 1
     $newVersionLine = "version: $nextVersion+$nextBuild"
-    $versionLinePattern = '(?m)^version:\s*\d+\.\d+\.\d+\+\d+\s*$'
-    $updatedPubspec = [regex]::Replace($pubspec, $versionLinePattern, $newVersionLine, 1)
-    if ($updatedPubspec -eq $pubspec) {
-        throw 'The version line in pubspec.yaml was not updated.'
-    }
+    $updatedPubspec = $pubspec.Remove($versionMatch.Index, $versionMatch.Length).Insert($versionMatch.Index, $newVersionLine)
 
     Write-Host "Preparing $tag from $currentVersion+$currentBuild to $nextVersion+$nextBuild."
     if (-not $PSCmdlet.ShouldProcess("$Remote/$Branch and tag $tag", 'Create and push release')) {
@@ -106,8 +100,11 @@ try {
     Invoke-GitText @('add', '--', 'pubspec.yaml') | Out-Null
     Invoke-GitText @('commit', '-m', "Release $tag") | Out-Null
     Invoke-GitText @('tag', '--annotate', $tag, '--message', "Release $tag") | Out-Null
-    Invoke-GitText @('push', $Remote, "$Branch") | Out-Null
-    Invoke-GitText @('push', $Remote, $tag) | Out-Null
+    try {
+        Invoke-GitText @('push', '--atomic', $Remote, "refs/heads/$Branch", "refs/tags/$tag") | Out-Null
+    } catch {
+        throw "Release $tag is prepared locally. After resolving the push error, retry with git push --atomic $Remote refs/heads/$Branch refs/tags/$tag.`n$_"
+    }
 
     Write-Host "Pushed $tag. GitHub Actions will build Web and Android assets and publish the Release."
 } finally {
