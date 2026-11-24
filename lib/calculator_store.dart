@@ -1,3 +1,4 @@
+import 'dart:async';
 import 'dart:convert';
 
 import 'package:material_ui/material_ui.dart' show ThemeMode;
@@ -130,10 +131,14 @@ class CalculatorSnapshot {
 }
 
 class CalculatorStore {
+  CalculatorStore({SharedPreferencesAsync? preferences})
+    : _preferences = preferences ?? SharedPreferencesAsync();
+
   static const _key = 'jotcalc.state';
 
-  final _preferences = SharedPreferencesAsync();
-  Future<void> _pendingWrite = Future<void>.value();
+  final SharedPreferencesAsync _preferences;
+  ({CalculatorSnapshot snapshot, Completer<void> completion})? _queuedWrite;
+  bool _writing = false;
 
   Future<CalculatorSnapshot> load() async {
     final raw = await _preferences.getString(_key);
@@ -147,12 +152,28 @@ class CalculatorStore {
   }
 
   Future<void> save(CalculatorSnapshot snapshot) {
-    final data = jsonEncode(snapshot.toJson());
-    final write = _pendingWrite.then((_) => _preferences.setString(_key, data));
-    _pendingWrite = write.then<void>(
-      (_) {},
-      onError: (Object error, StackTrace stack) {},
-    );
-    return write;
+    // Every snapshot contains the full state. Replace any pending snapshot
+    // and complete its callers when the newer state reaches storage.
+    final completion = _queuedWrite?.completion ?? Completer<void>();
+    _queuedWrite = (snapshot: snapshot, completion: completion);
+    if (!_writing) {
+      _writing = true;
+      scheduleMicrotask(_writeQueued);
+    }
+    return completion.future;
+  }
+
+  Future<void> _writeQueued() async {
+    while (_queuedWrite != null) {
+      final write = _queuedWrite!;
+      _queuedWrite = null;
+      try {
+        await _preferences.setString(_key, jsonEncode(write.snapshot));
+        write.completion.complete();
+      } catch (error, stack) {
+        write.completion.completeError(error, stack);
+      }
+    }
+    _writing = false;
   }
 }

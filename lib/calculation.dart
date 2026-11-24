@@ -89,13 +89,16 @@ class _ExpressionParser {
     final decimal = match.group(0)!;
     final point = decimal.indexOf('.');
     final places = point < 0 ? 0 : decimal.length - point - 1;
-    final digits = BigInt.parse(decimal.replaceFirst('.', ''));
+    final digits = BigInt.parse(
+      point < 0 ? decimal : decimal.replaceFirst('.', ''),
+    );
     _offset = match.end;
     final isPercentage = _takeOperator('%') != null;
+    final decimalPlaces = places + (isPercentage ? 2 : 0);
     return (
       value: _Fraction(
         sign == '−' ? -digits : digits,
-        _Fraction.ten.pow(places + (isPercentage ? 2 : 0)),
+        decimalPlaces == 0 ? BigInt.one : _Fraction.ten.pow(decimalPlaces),
       ),
       isPercentage: isPercentage,
     );
@@ -299,6 +302,9 @@ class _AdvancedExpressionParser extends _ExpressionParser {
 
 class _Fraction {
   factory _Fraction(BigInt numerator, BigInt denominator) {
+    if (denominator == BigInt.one) {
+      return _Fraction._(numerator, denominator);
+    }
     if (denominator == BigInt.zero) {
       throw const CalculationException(CalculationIssue.divisionByZero);
     }
@@ -325,15 +331,19 @@ class _Fraction {
 
   _Fraction operator -() => _Fraction._(-numerator, denominator);
 
-  _Fraction operator +(_Fraction other) => _Fraction(
-    numerator * other.denominator + other.numerator * denominator,
-    denominator * other.denominator,
-  );
+  _Fraction operator +(_Fraction other) => denominator == other.denominator
+      ? _Fraction(numerator + other.numerator, denominator)
+      : _Fraction(
+          numerator * other.denominator + other.numerator * denominator,
+          denominator * other.denominator,
+        );
 
-  _Fraction operator -(_Fraction other) => _Fraction(
-    numerator * other.denominator - other.numerator * denominator,
-    denominator * other.denominator,
-  );
+  _Fraction operator -(_Fraction other) => denominator == other.denominator
+      ? _Fraction(numerator - other.numerator, denominator)
+      : _Fraction(
+          numerator * other.denominator - other.numerator * denominator,
+          denominator * other.denominator,
+        );
 
   _Fraction operator *(_Fraction other) =>
       _Fraction(numerator * other.numerator, denominator * other.denominator);

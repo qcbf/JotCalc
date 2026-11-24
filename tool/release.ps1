@@ -51,8 +51,9 @@ try {
     Invoke-GitText @('fetch', '--quiet', $Remote, $Branch) | Out-Null
     $localCommit = Invoke-GitText @('rev-parse', 'HEAD')
     $remoteCommit = Invoke-GitText @('rev-parse', "$Remote/$Branch")
-    if ($localCommit -ne $remoteCommit) {
-        throw "Local '$Branch' is not synchronized with '$Remote/$Branch'. Pull or push it first."
+    $commonCommit = Invoke-GitText @('merge-base', $localCommit, $remoteCommit)
+    if ($commonCommit -ne $remoteCommit) {
+        throw "Local '$Branch' is missing commits from '$Remote/$Branch'. Integrate them before releasing."
     }
 
     $pubspecPath = Join-Path $projectRoot 'pubspec.yaml'
@@ -106,7 +107,7 @@ try {
         throw "Release $tag is prepared locally. After resolving the push error, retry with git push --atomic $Remote refs/heads/$Branch refs/tags/$tag.`n$_"
     }
 
-    Write-Host "Pushed $tag. GitHub Actions will build Web and Android assets and publish the Release."
+    Write-Host "Pushed $tag. GitHub Actions will build Web, Android, and Windows assets and publish the Release."
 } finally {
     Pop-Location
 }

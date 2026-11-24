@@ -17,6 +17,7 @@ permissions:
   contents: read
 
 env:
+  FLUTTER_VERSION: '3.50.1'
   RELEASE_TAG: ${{ github.event_name == 'workflow_dispatch' && inputs.tag || github.ref_name }}
 
 concurrency:
@@ -54,11 +55,17 @@ jobs:
       - name: Set up Flutter
         uses: subosito/flutter-action@v2
         with:
+          flutter-version: ${{ env.FLUTTER_VERSION }}
           channel: stable
           cache: true
 
       - name: Install dependencies
         run: flutter pub get
+
+      - name: Verify Dart code and calculator behavior
+        run: |
+          flutter analyze --no-pub
+          flutter test --no-pub
 
       - name: Configure Android signing
         shell: bash
@@ -125,6 +132,7 @@ jobs:
         if: hashFiles('windows/CMakeLists.txt') != ''
         uses: subosito/flutter-action@v2
         with:
+          flutter-version: ${{ env.FLUTTER_VERSION }}
           channel: stable
           cache: true
 

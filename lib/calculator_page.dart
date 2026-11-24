@@ -12,6 +12,12 @@ import 'calculator_store.dart';
 import 'calculator_widgets.dart';
 import 'settings_page.dart';
 
+typedef _DisplayState = ({
+  String? result,
+  CalculationIssue? error,
+  bool confirmed,
+});
+
 class CalculatorPage extends StatefulWidget {
   const CalculatorPage({
     super.key,
@@ -39,6 +45,11 @@ class _CalculatorPageState extends State<CalculatorPage> {
   final _editorFocus = FocusNode();
   final _historyScroll = ScrollController();
   final _scaffoldKey = GlobalKey<ScaffoldState>();
+  final _display = ValueNotifier<_DisplayState>((
+    result: null,
+    error: null,
+    confirmed: false,
+  ));
 
   late final bool _allowAdvancedInput = switch (defaultTargetPlatform) {
     TargetPlatform.windows => true,
@@ -49,13 +60,10 @@ class _CalculatorPageState extends State<CalculatorPage> {
   late CalculatorSettings _settings;
   late final List<HistoryEntry> _history;
   String _evaluatedExpression = '';
-  String? _value;
   ({String value, HistoryEntry? entry})? _copyFeedback;
   Timer? _copyFeedbackTimer;
   ({PhysicalKeyboardKey key, Timer timer})? _enterHold;
-  CalculationIssue? _issue;
-  bool _isResult = false;
-  bool _showIssue = false;
+  CalculationIssue? _draftIssue;
   bool _recordedCurrentResult = false;
   bool _skipDeleteConfirmation = false;
   bool _resizedHistory = false;
@@ -79,6 +87,7 @@ class _CalculatorPageState extends State<CalculatorPage> {
     _editor.dispose();
     _editorFocus.dispose();
     _historyScroll.dispose();
+    _display.dispose();
     super.dispose();
   }
 
@@ -86,35 +95,31 @@ class _CalculatorPageState extends State<CalculatorPage> {
     final expression = _editor.text;
     if (expression == _evaluatedExpression) return;
     _cancelEnterHold();
+    _evaluatedExpression = expression;
+    _recordedCurrentResult = false;
 
-    String? value;
-    CalculationIssue? issue;
+    String? result;
+    _draftIssue = null;
     try {
-      value = evaluateExpression(
-        expression,
-        allowAdvanced: _allowAdvancedInput,
-      );
+      if (expression.isNotEmpty) {
+        result = evaluateExpression(
+          expression,
+          allowAdvanced: _allowAdvancedInput,
+        );
+      }
     } on CalculationException catch (error) {
-      issue = error.issue;
+      _draftIssue = error.issue;
     }
 
-    setState(() {
-      _evaluatedExpression = expression;
-      _value = value;
-      _issue = issue;
-      _showIssue = false;
-      _isResult = false;
-      _recordedCurrentResult = false;
-    });
+    _display.value = (result: result, error: null, confirmed: false);
   }
 
   void _editExpression() {
-    if (!_isResult) return;
+    final display = _display.value;
+    if (!display.confirmed) return;
     _cancelEnterHold();
-    setState(() {
-      _isResult = false;
-      _recordedCurrentResult = false;
-    });
+    _recordedCurrentResult = false;
+    _display.value = (result: display.result, error: null, confirmed: false);
   }
 
   void _replaceExpression(String expression, [int? offset]) {
@@ -198,7 +203,7 @@ class _CalculatorPageState extends State<CalculatorPage> {
     _cancelEnterHold();
     _confirm();
     if (!_settings.saveHistoryOnLongPress ||
-        _value == null ||
+        _display.value.result == null ||
         _recordedCurrentResult) {
       return;
     }
@@ -228,13 +233,12 @@ class _CalculatorPageState extends State<CalculatorPage> {
     if (key == 'C') {
       _editExpression();
       _replaceExpression('');
-      if (_showIssue) setState(() => _showIssue = false);
       _editorFocus.requestFocus();
       return;
     }
 
-    if (_isResult) {
-      final previousResult = _value!;
+    final display = _display.value;
+    if (display.confirmed) {
       _editExpression();
       if (key == '⌫') {
         _editor.selection = TextSelection.collapsed(
@@ -245,7 +249,7 @@ class _CalculatorPageState extends State<CalculatorPage> {
             _binaryOperators.contains(key) ||
             key == '%' ||
             (_allowAdvancedInput && '^&|<>m '.contains(key));
-        _replaceExpression(continueFromResult ? previousResult : '');
+        _replaceExpression(continueFromResult ? display.result! : '');
       }
     }
 
@@ -297,25 +301,28 @@ class _CalculatorPageState extends State<CalculatorPage> {
   }
 
   void _confirm({bool addToHistory = false}) {
-    final value = _value;
+    final value = _display.value.result;
     if (value == null) {
-      if (_editor.text.trim().isNotEmpty) setState(() => _showIssue = true);
+      if (_editor.text.trim().isNotEmpty) {
+        _display.value = (
+          result: null,
+          error: _draftIssue ?? CalculationIssue.invalid,
+          confirmed: false,
+        );
+      }
       return;
     }
 
+    _display.value = (result: value, error: null, confirmed: true);
     final record =
         !_recordedCurrentResult &&
         (addToHistory || !_settings.saveHistoryOnLongPress);
-    setState(() {
-      _isResult = true;
-      _showIssue = false;
-      if (record) {
-        _history.add(HistoryEntry(expression: _editor.text, result: value));
-        _recordedCurrentResult = true;
-      }
-    });
     _editorFocus.unfocus();
     if (record) {
+      setState(() {
+        _history.add(HistoryEntry(expression: _editor.text, result: value));
+        _recordedCurrentResult = true;
+      });
       if (_historyScroll.hasClients) _historyScroll.jumpTo(0);
       if (_settings.persistHistory) _save();
     }
@@ -323,15 +330,11 @@ class _CalculatorPageState extends State<CalculatorPage> {
 
   void _recall(HistoryEntry entry) {
     _cancelEnterHold();
-    setState(() {
-      _evaluatedExpression = entry.expression;
-      _replaceExpression(entry.expression);
-      _value = entry.result;
-      _issue = null;
-      _showIssue = false;
-      _isResult = true;
-      _recordedCurrentResult = true;
-    });
+    _evaluatedExpression = entry.expression;
+    _replaceExpression(entry.expression);
+    _draftIssue = null;
+    _recordedCurrentResult = true;
+    _display.value = (result: entry.result, error: null, confirmed: true);
     _editorFocus.requestFocus();
   }
 
@@ -383,8 +386,10 @@ class _CalculatorPageState extends State<CalculatorPage> {
       _skipDeleteConfirmation = skip;
     }
 
-    setState(() => _history.remove(entry));
-    if (_settings.persistHistory) _save();
+    if (_history.remove(entry)) {
+      setState(() {});
+      if (_settings.persistHistory) _save();
+    }
   }
 
   Future<void> _clearHistory() async {
@@ -504,14 +509,78 @@ class _CalculatorPageState extends State<CalculatorPage> {
       );
   }
 
-  String? _errorMessage(AppStrings strings) => !_showIssue
-      ? null
-      : switch (_issue) {
-          CalculationIssue.incomplete => strings.incompleteExpression,
-          CalculationIssue.divisionByZero => strings.divisionByZero,
-          CalculationIssue.outOfRange => strings.calculationOutOfRange,
-          _ => strings.invalidExpression,
-        };
+  Widget _historyPane(Widget header, {bool inDrawer = false}) => HistoryPane(
+    header: header,
+    entries: _history,
+    copiedEntry: _copyFeedback?.entry,
+    controller: _historyScroll,
+    onCopy: _copyHistoryResult,
+    onRecall: inDrawer
+        ? (entry) {
+            _scaffoldKey.currentState?.closeDrawer();
+            _recall(entry);
+          }
+        : _recall,
+    onDelete: _deleteEntry,
+    showDivider: !inDrawer,
+  );
+
+  Widget _buildDisplay({
+    required double largeFontSize,
+    required double smallFontSize,
+  }) {
+    return RepaintBoundary(
+      child: ValueListenableBuilder<_DisplayState>(
+        valueListenable: _display,
+        builder: (context, display, _) {
+          final strings = AppStrings.of(context);
+          final error = switch (display.error) {
+            CalculationIssue.incomplete => strings.incompleteExpression,
+            CalculationIssue.divisionByZero => strings.divisionByZero,
+            CalculationIssue.outOfRange => strings.calculationOutOfRange,
+            CalculationIssue.invalid => strings.invalidExpression,
+            null => null,
+          };
+          final result = display.result;
+          return Stack(
+            fit: StackFit.expand,
+            children: [
+              CalculationDisplay(
+                controller: _editor,
+                focusNode: _editorFocus,
+                onEdit: _editExpression,
+                isResult: display.confirmed,
+                allowAdvancedInput: _allowAdvancedInput,
+                largeFontSize: largeFontSize,
+                smallFontSize: smallFontSize,
+                result: result,
+                error: error,
+                onCopy: result == null ? null : () => _copyValue(result),
+              ),
+              if (result != null &&
+                  _copyFeedback == (value: result, entry: null))
+                Positioned(
+                  top: 5,
+                  left: 8,
+                  child: IgnorePointer(
+                    child: Semantics(
+                      liveRegion: true,
+                      child: Text(
+                        strings.copied,
+                        style: TextStyle(
+                          color: Theme.of(context).colorScheme.primary,
+                          fontSize: 12,
+                        ),
+                      ),
+                    ),
+                  ),
+                ),
+            ],
+          );
+        },
+      ),
+    );
+  }
 
   @override
   Widget build(BuildContext context) {
@@ -559,32 +628,23 @@ class _CalculatorPageState extends State<CalculatorPage> {
               drawer: drawerHistory
                   ? Drawer(
                       backgroundColor: colors.surfaceContainerLow,
-                      child: Builder(
-                        builder: (context) => HistoryPane(
-                          header: ListTile(
-                            title: Text(strings.history),
-                            trailing: Row(
-                              mainAxisSize: MainAxisSize.min,
-                              children: [
-                                clearHistoryButton,
-                                IconButton(
-                                  tooltip: strings.closeHistory,
-                                  onPressed: Scaffold.of(context).closeDrawer,
-                                  icon: const Icon(Icons.close),
-                                ),
-                              ],
-                            ),
+                      child: _historyPane(
+                        ListTile(
+                          title: Text(strings.history),
+                          trailing: Row(
+                            mainAxisSize: MainAxisSize.min,
+                            children: [
+                              clearHistoryButton,
+                              IconButton(
+                                tooltip: strings.closeHistory,
+                                onPressed: () =>
+                                    _scaffoldKey.currentState?.closeDrawer(),
+                                icon: const Icon(Icons.close),
+                              ),
+                            ],
                           ),
-                          entries: _history,
-                          copiedEntry: _copyFeedback?.entry,
-                          controller: _historyScroll,
-                          onCopy: _copyHistoryResult,
-                          onRecall: (entry) {
-                            Scaffold.of(context).closeDrawer();
-                            _recall(entry);
-                          },
-                          onDelete: _deleteEntry,
                         ),
+                        inDrawer: true,
                       ),
                     )
                   : null,
@@ -600,8 +660,8 @@ class _CalculatorPageState extends State<CalculatorPage> {
                     if (inlineHistory)
                       SizedBox(
                         width: historyWidth,
-                        child: HistoryPane(
-                          header: Row(
+                        child: _historyPane(
+                          Row(
                             mainAxisAlignment: MainAxisAlignment.spaceBetween,
                             children: [
                               Flexible(
@@ -625,13 +685,6 @@ class _CalculatorPageState extends State<CalculatorPage> {
                               ),
                             ],
                           ),
-                          entries: _history,
-                          copiedEntry: _copyFeedback?.entry,
-                          controller: _historyScroll,
-                          onCopy: _copyHistoryResult,
-                          onRecall: _recall,
-                          onDelete: _deleteEntry,
-                          showDivider: true,
                         ),
                       ),
                     Expanded(
@@ -642,15 +695,13 @@ class _CalculatorPageState extends State<CalculatorPage> {
                               children: [
                                 SettingsButton(onPressed: _openSettings),
                                 if (drawerHistory)
-                                  Builder(
-                                    builder: (context) => IconButton(
-                                      tooltip: strings.history,
-                                      onPressed: Scaffold.of(context)
-                                          .openDrawer,
-                                      icon: Icon(
-                                        Icons.history_rounded,
-                                        color: colors.onSurfaceVariant,
-                                      ),
+                                  IconButton(
+                                    tooltip: strings.history,
+                                    onPressed: () =>
+                                        _scaffoldKey.currentState?.openDrawer(),
+                                    icon: Icon(
+                                      Icons.history_rounded,
+                                      color: colors.onSurfaceVariant,
                                     ),
                                   ),
                               ],
@@ -677,55 +728,19 @@ class _CalculatorPageState extends State<CalculatorPage> {
                                       desk.maxHeight - panelMin - panelGap,
                                     ),
                                   );
-                                  final value = _value;
                                   return Column(
                                     crossAxisAlignment:
                                         CrossAxisAlignment.stretch,
                                     spacing: panelGap,
                                     children: [
                                       Expanded(
-                                        child: Stack(
-                                          fit: StackFit.expand,
-                                          children: [
-                                            CalculationDisplay(
-                                              controller: _editor,
-                                              focusNode: _editorFocus,
-                                              onEdit: _editExpression,
-                                              isResult: _isResult,
-                                              allowAdvancedInput:
-                                                  _allowAdvancedInput,
-                                              largeFontSize: compact
-                                                  ? 28
-                                                  : (landscape ? 34 : 40),
-                                              smallFontSize: compact
-                                                  ? 13
-                                                  : (landscape ? 14 : 16),
-                                              result: value,
-                                              error: _errorMessage(strings),
-                                              onCopy: value == null
-                                                  ? null
-                                                  : () => _copyValue(value),
-                                            ),
-                                            if (value != null &&
-                                                _copyFeedback ==
-                                                    (value: value, entry: null))
-                                              Positioned(
-                                                top: 5,
-                                                left: 8,
-                                                child: IgnorePointer(
-                                                  child: Semantics(
-                                                    liveRegion: true,
-                                                    child: Text(
-                                                      strings.copied,
-                                                      style: TextStyle(
-                                                        color: colors.primary,
-                                                        fontSize: 12,
-                                                      ),
-                                                    ),
-                                                  ),
-                                                ),
-                                              ),
-                                          ],
+                                        child: _buildDisplay(
+                                          largeFontSize: compact
+                                              ? 28
+                                              : (landscape ? 34 : 40),
+                                          smallFontSize: compact
+                                              ? 13
+                                              : (landscape ? 14 : 16),
                                         ),
                                       ),
                                       SizedBox(

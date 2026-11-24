@@ -4,6 +4,7 @@ import 'package:material_ui/material_ui.dart';
 import 'app_localization.dart';
 import 'calculator_page.dart';
 import 'calculator_store.dart';
+import 'framework_localizations.dart';
 
 ThemeData _calculatorTheme(Brightness brightness) {
   const accent = Color(0xFF0F6E6E);
@@ -88,17 +89,29 @@ class _JotCalcAppState extends State<JotCalcApp> {
 
   late var _settings = widget.initialSnapshot.settings;
 
+  void _onSettingsChanged(CalculatorSettings settings) {
+    if (settings.language == _settings.language &&
+        settings.themeMode == _settings.themeMode) {
+      return;
+    }
+    setState(() => _settings = settings);
+  }
+
   @override
   Widget build(BuildContext context) {
+    final brightness = switch (_settings.themeMode) {
+      ThemeMode.system => MediaQuery.platformBrightnessOf(context),
+      ThemeMode.light => Brightness.light,
+      ThemeMode.dark => Brightness.dark,
+    };
+
     return MaterialApp(
       title: 'JotCalc',
       debugShowCheckedModeBanner: false,
       locale: _settings.language.locale,
       supportedLocales: AppLanguage.values.map((language) => language.locale),
-      localizationsDelegates: GlobalMaterialLocalizations.delegates,
-      theme: _lightTheme,
-      darkTheme: _darkTheme,
-      themeMode: _settings.themeMode,
+      localizationsDelegates: calculatorLocalizationsDelegates,
+      theme: brightness == Brightness.dark ? _darkTheme : _lightTheme,
       builder: (context, child) {
         final colors = Theme.of(context).colorScheme;
         final overlay = colors.brightness == Brightness.dark
@@ -115,7 +128,7 @@ class _JotCalcAppState extends State<JotCalcApp> {
       home: CalculatorPage(
         initialSnapshot: widget.initialSnapshot,
         onSave: widget.onSave,
-        onSettingsChanged: (settings) => setState(() => _settings = settings),
+        onSettingsChanged: _onSettingsChanged,
       ),
     );
   }

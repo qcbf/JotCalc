@@ -1,13 +1,17 @@
 name: jotcalc
 description: A tape-style calculator for Android, Windows, and the web.
 publish_to: none
-version: 1.0.0+2
+version: 1.1.0+3
 environment:
   sdk: ^3.13.0
 
 dependencies:
   flutter:
     sdk: flutter
+  flutter_localizations:
+    sdk: flutter
+  cupertino_ui: ^1.1.7
+  intl: ^0.20.3
   material_ui: ^1.11.1
   shared_preferences: ^2.5.3
   url_launcher: ^6.3.1

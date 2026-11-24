@@ -36,6 +36,16 @@ Future<void> main(List<String> arguments) async {
     if (exitCode != 0) return;
 
     await trimCanvasKit(staging);
+    final index = File.fromUri(staging.uri.resolve('index.html'));
+    final html = await index.readAsString();
+    await index.writeAsString(
+      html.replaceFirst(
+        '<!-- release-preloads -->',
+        '''
+<link rel="preload" href="main.dart.js" as="script">
+  <link rel="preload" href="canvaskit/canvaskit.wasm" as="fetch" type="application/wasm" crossorigin>''',
+      ),
+    );
     final bootstrap = File.fromUri(staging.uri.resolve('flutter_bootstrap.js'));
     final script = await bootstrap.readAsString();
     await bootstrap.writeAsString(
