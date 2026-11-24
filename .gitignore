@@ -4,3 +4,6 @@
 *.iml
 /build/
 /coverage/
+/tool/ftp.local.json
+/android/key.properties
+/android/app/release.keystore

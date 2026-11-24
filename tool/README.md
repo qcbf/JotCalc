@@ -1,5 +1,21 @@
 # Release builds
 
+## Automated release
+
+Run `pwsh -File tool/release.ps1` from a clean `main` checkout. The script increments
+the patch version and Android build number, commits the new version, creates an
+annotated `vX.Y.Z` tag, and pushes the branch and tag. The tag starts the GitHub
+Actions workflow in `.github/workflows/release.yml`.
+
+Pass `-Version 1.0.0` when a major or minor release is needed. Use
+`-WhatIf` to inspect the next version without changing the repository.
+
+The workflow publishes a Web ZIP, arm64-v8a, armeabi-v7a, and x86_64 APKs, plus
+SHA-256 checksums, to the GitHub Release. It uses the project's default Android
+release signing behavior unless the repository has these Actions secrets
+configured: `ANDROID_KEYSTORE_BASE64`, `ANDROID_KEY_ALIAS`,
+`ANDROID_KEY_PASSWORD`, and `ANDROID_STORE_PASSWORD`.
+
 ## Web
 
 Run `dart tool/build_web.dart` from the project root and publish the contents of `build/web-release`. For a site hosted under a path, pass the path with both slashes, for example `dart tool/build_web.dart /JotCalc/`.
