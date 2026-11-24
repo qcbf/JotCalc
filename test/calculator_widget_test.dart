@@ -1,7 +1,12 @@
 import 'dart:convert';
 
 import 'package:flutter/gestures.dart'
-    show kDoubleTapMinTime, kDoubleTapTimeout, kLongPressTimeout;
+    show
+        kDoubleTapMinTime,
+        kLongPressTimeout,
+        PointerDeviceKind,
+        PointerScrollEvent;
+import 'package:flutter/rendering.dart' show RenderParagraph;
 import 'package:flutter/services.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:jotcalc/calculator_store.dart';
@@ -97,6 +102,93 @@ void main() {
       expect(saves.last.history.map((entry) => entry.result), ['36', '7']);
     },
   );
+
+  testWidgets('scrolls a long expression without covering it', (tester) async {
+    const caption = '121';
+    final controller = TextEditingController(
+      text: '${List.filled(120, '1+').join()}1',
+    );
+    final focusNode = FocusNode();
+    addTearDown(controller.dispose);
+    addTearDown(focusNode.dispose);
+
+    await tester.pumpWidget(
+      MaterialApp(
+        theme: ThemeData(platform: TargetPlatform.windows),
+        home: Scaffold(
+          body: Center(
+            child: SizedBox(
+              width: 236,
+              height: 110,
+              child: CalculationDisplay(
+                controller: controller,
+                focusNode: focusNode,
+                onEdit: () {},
+                isResult: false,
+                largeFontSize: 28,
+                smallFontSize: 13,
+                result: caption,
+              ),
+            ),
+          ),
+        ),
+      ),
+    );
+
+    final scrollbar = find.byType(Scrollbar);
+    final scrollbarBounds = tester.getRect(scrollbar);
+    final painter = tester
+        .widgetList<CustomPaint>(
+          find.descendant(of: scrollbar, matching: find.byType(CustomPaint)),
+        )
+        .map((widget) => widget.foregroundPainter)
+        .whereType<ScrollbarPainter>()
+        .single;
+    final editable = tester
+        .state<EditableTextState>(find.byType(EditableText))
+        .renderEditable;
+    final editableRight = editable
+        .localToGlobal(Offset(editable.size.width, 0))
+        .dx;
+    expect(
+      scrollbarBounds.right - editableRight,
+      greaterThanOrEqualTo(painter.thickness + 2 * painter.crossAxisMargin),
+    );
+    expect(
+      tester.getRect(find.text(caption)).right,
+      closeTo(editableRight, 0.01),
+    );
+
+    final position = tester.widget<Scrollbar>(scrollbar).controller!.position;
+    expect(position.maxScrollExtent, greaterThan(0));
+    final initialOffset = position.pixels;
+    await tester.sendEventToBinding(
+      PointerScrollEvent(
+        kind: PointerDeviceKind.mouse,
+        position: editable.localToGlobal(editable.size.center(Offset.zero)),
+        scrollDelta: const Offset(0, 48),
+      ),
+    );
+    await tester.pump();
+    await tester.pump(const Duration(milliseconds: 200));
+    final offsetAfterWheel = position.pixels;
+    expect(offsetAfterWheel, greaterThan(initialOffset));
+
+    final thumbPoint = Offset(
+      scrollbarBounds.width - painter.crossAxisMargin - painter.thickness / 2,
+      scrollbarBounds.height / 3,
+    );
+    expect(
+      painter.hitTestOnlyThumbInteractive(thumbPoint, PointerDeviceKind.mouse),
+      isTrue,
+    );
+    await tester.dragFrom(
+      scrollbarBounds.topLeft + thumbPoint,
+      const Offset(0, 20),
+      kind: PointerDeviceKind.mouse,
+    );
+    expect(position.pixels, greaterThan(offsetAfterWheel));
+  });
 
   testWidgets(
     'confirm once, continue from the result, and begin a fresh number',
@@ -290,32 +382,61 @@ void main() {
   });
 
   testWidgets(
-    'copies history on one tap, recalls on two, and preserves confirmations',
+    'copies history on release, recalls on a second click, and confirms deletion',
     (tester) async {
       final saves = <CalculatorSnapshot>[];
       final copies = _captureClipboard();
+      const copiedEntry = HistoryEntry(
+        expression: '12345678+1',
+        result: '12345679',
+      );
       await _start(
         tester,
         saves,
+        size: const Size(316, 440),
         snapshot: const CalculatorSnapshot(
           history: [
-            HistoryEntry(expression: '2+5', result: '7'),
+            copiedEntry,
             HistoryEntry(expression: '2×4', result: '8'),
             HistoryEntry(expression: '3×3', result: '9'),
           ],
         ),
       );
       await _press(tester, ['1', '+']);
-      await tester.tap(_historyText('7'));
-      await tester.pump(kDoubleTapTimeout);
-      expect(copies, ['7']);
+      final historyResult = _historyText(copiedEntry.result);
+      final resultBounds = tester.getRect(historyResult);
+      final click = await tester.startGesture(
+        resultBounds.center,
+        kind: PointerDeviceKind.mouse,
+      );
+      await tester.pump();
+      expect(copies, isEmpty);
+      await click.up();
+      await tester.pump();
+      expect(copies, [copiedEntry.result]);
       expect(_display(tester).controller.text, '1+');
 
-      await tester.tap(_historyText('8'));
+      final feedback = _historyText('已复制');
+      expect(feedback, findsOneWidget);
+      expect(
+        tester.renderObject<RenderParagraph>(feedback).didExceedMaxLines,
+        isFalse,
+      );
+      final feedbackBounds = tester.getRect(feedback);
+      expect(feedbackBounds.left, resultBounds.left);
+      expect(feedbackBounds.center.dy, closeTo(resultBounds.center.dy, 0.01));
+      expect(feedbackBounds.right, lessThanOrEqualTo(resultBounds.right));
+      expect(tester.getRect(historyResult), resultBounds);
+      await tester.pump(const Duration(seconds: 1));
+      expect(feedback, findsNothing);
+
+      await tester.tap(_historyText('8'), kind: PointerDeviceKind.mouse);
       await tester.pump(kDoubleTapMinTime);
-      await tester.tap(_historyText('8'));
-      await tester.pump(kDoubleTapTimeout);
-      expect(copies, ['7']);
+      expect(copies, [copiedEntry.result, '8']);
+      expect(_display(tester).controller.text, '1+');
+      await tester.tap(_historyText('8'), kind: PointerDeviceKind.mouse);
+      await tester.pump();
+      expect(copies, [copiedEntry.result, '8']);
       expect(_display(tester).controller.text, '2×4');
       expect(_display(tester).isResult, isTrue);
       expect(saves, isEmpty);
@@ -339,7 +460,7 @@ void main() {
       await tester.longPress(_historyText('8'));
       await tester.pumpAndSettle();
       expect(find.byType(AlertDialog), findsNothing);
-      expect(saves.last.history.single.result, '7');
+      expect(saves.last.history.single, copiedEntry);
 
       final clearHistory = find.byWidgetPredicate(
         (widget) => widget is IconButton && widget.tooltip == '清空历史记录',
@@ -349,7 +470,7 @@ void main() {
       expect(find.text('清空全部历史记录？'), findsOneWidget);
       await tester.tap(find.text('取消'));
       await tester.pumpAndSettle();
-      expect(_historyText('7'), findsOneWidget);
+      expect(historyResult, findsOneWidget);
       expect(saves, hasLength(2));
 
       await tester.tap(clearHistory);

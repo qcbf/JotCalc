@@ -184,27 +184,25 @@ class _HistoryRow extends StatefulWidget {
 }
 
 class _HistoryRowState extends State<_HistoryRow> {
-  Timer? _tapTimer;
+  Timer? _doubleTapTimer;
 
   void _handleTap() {
-    final pendingTap = _tapTimer;
-    if (pendingTap != null) {
-      pendingTap.cancel();
-      _tapTimer = null;
+    final doubleTapTimer = _doubleTapTimer;
+    if (doubleTapTimer != null) {
+      doubleTapTimer.cancel();
+      _doubleTapTimer = null;
       widget.onRecall();
       return;
     }
 
     // Flutter Web can deliver a double-click as two separate semantic taps.
-    _tapTimer = Timer(kDoubleTapTimeout, () {
-      _tapTimer = null;
-      widget.onCopy();
-    });
+    _doubleTapTimer = Timer(kDoubleTapTimeout, () => _doubleTapTimer = null);
+    widget.onCopy();
   }
 
   @override
   void dispose() {
-    _tapTimer?.cancel();
+    _doubleTapTimer?.cancel();
     super.dispose();
   }
 
@@ -252,28 +250,10 @@ class _HistoryRowState extends State<_HistoryRow> {
                     ),
                   ),
                   const SizedBox(height: 2),
-                  Row(
-                    mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                  Stack(
                     children: [
-                      if (widget.copied)
-                        Flexible(
-                          child: Semantics(
-                            liveRegion: true,
-                            child: Text(
-                              strings.copied,
-                              maxLines: 1,
-                              overflow: TextOverflow.ellipsis,
-                              style: TextStyle(
-                                color: colors.primary,
-                                fontSize: 11,
-                              ),
-                            ),
-                          ),
-                        )
-                      else
-                        const SizedBox.shrink(),
-                      Flexible(
-                        flex: 2,
+                      Align(
+                        alignment: Alignment.centerRight,
                         child: Text(
                           entry.result,
                           maxLines: 1,
@@ -285,6 +265,34 @@ class _HistoryRowState extends State<_HistoryRow> {
                           ),
                         ),
                       ),
+                      if (widget.copied)
+                        Positioned.fill(
+                          child: IgnorePointer(
+                            child: Row(
+                              crossAxisAlignment: CrossAxisAlignment.stretch,
+                              children: [
+                                Flexible(
+                                  child: ColoredBox(
+                                    color: colors.surfaceContainerLow,
+                                    child: FittedBox(
+                                      fit: BoxFit.scaleDown,
+                                      child: Semantics(
+                                        liveRegion: true,
+                                        child: Text(
+                                          strings.copied,
+                                          style: TextStyle(
+                                            color: colors.primary,
+                                            fontSize: 11,
+                                          ),
+                                        ),
+                                      ),
+                                    ),
+                                  ),
+                                ),
+                              ],
+                            ),
+                          ),
+                        ),
                     ],
                   ),
                 ],
@@ -324,6 +332,27 @@ class _PaperRule extends CustomPainter {
   @override
   bool shouldRepaint(covariant _PaperRule oldDelegate) =>
       oldDelegate.axis != axis || oldDelegate.color != color;
+}
+
+class _ExpressionScrollBehavior extends MaterialScrollBehavior {
+  const _ExpressionScrollBehavior();
+
+  // Include the desktop scrollbar's track margins in the gutter.
+  static const gutterWidth = 12.0;
+
+  @override
+  Widget buildScrollbar(
+    BuildContext context,
+    Widget child,
+    ScrollableDetails details,
+  ) => super.buildScrollbar(
+    context,
+    Padding(
+      padding: const EdgeInsets.only(right: gutterWidth),
+      child: child,
+    ),
+    details,
+  );
 }
 
 class CalculationDisplay extends StatelessWidget {
@@ -386,7 +415,7 @@ class CalculationDisplay extends StatelessWidget {
         borderRadius: BorderRadius.circular(12),
       ),
       child: Padding(
-        padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
+        padding: const EdgeInsets.fromLTRB(8, 5, 2, 5),
         child: LayoutBuilder(
           builder: (context, constraints) => Column(
             children: [
@@ -395,23 +424,26 @@ class CalculationDisplay extends StatelessWidget {
                   alignment: Alignment.bottomRight,
                   child: Semantics(
                     label: strings.expression,
-                    child: TextField(
-                      controller: controller,
-                      focusNode: focusNode,
-                      onTap: onEdit,
-                      showCursor: !isResult,
-                      keyboardType: TextInputType.none,
-                      inputFormatters: [_expressionFormatter],
-                      autocorrect: false,
-                      enableSuggestions: false,
-                      maxLines: null,
-                      textAlign: TextAlign.right,
-                      scrollPadding: EdgeInsets.zero,
-                      cursorColor: colors.primary,
-                      style: expressionStyle,
-                      decoration: InputDecoration.collapsed(
-                        hintText: '0',
-                        hintStyle: expressionStyle,
+                    child: ScrollConfiguration(
+                      behavior: const _ExpressionScrollBehavior(),
+                      child: TextField(
+                        controller: controller,
+                        focusNode: focusNode,
+                        onTap: onEdit,
+                        showCursor: !isResult,
+                        keyboardType: TextInputType.none,
+                        inputFormatters: [_expressionFormatter],
+                        autocorrect: false,
+                        enableSuggestions: false,
+                        maxLines: null,
+                        textAlign: TextAlign.right,
+                        scrollPadding: EdgeInsets.zero,
+                        cursorColor: colors.primary,
+                        style: expressionStyle,
+                        decoration: InputDecoration.collapsed(
+                          hintText: '0',
+                          hintStyle: expressionStyle,
+                        ),
                       ),
                     ),
                   ),
@@ -419,7 +451,10 @@ class CalculationDisplay extends StatelessWidget {
               ),
               if (caption != null)
                 Padding(
-                  padding: const EdgeInsets.only(top: 3),
+                  padding: const EdgeInsets.only(
+                    top: 2,
+                    right: _ExpressionScrollBehavior.gutterWidth,
+                  ),
                   child: Semantics(
                     label: error == null
                         ? (isResult ? strings.result : strings.previewResult)

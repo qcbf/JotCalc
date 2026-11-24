@@ -513,8 +513,8 @@ class _CalculatorPageState extends State<CalculatorPage> {
             final height = bounds.maxHeight;
             final landscape = width > height;
             final compact = width < 360 || height < 360;
-            final padding = compact ? 8.0 : 12.0;
-            final gap = compact ? 4.0 : 8.0;
+            final padding = compact ? 6.0 : 8.0;
+            final gap = compact ? 3.0 : 6.0;
             final maxHistoryWidth = width - (4 * 48 + 3 * gap + 2 * padding);
             final inlineHistory =
                 _settings.showHistory &&
@@ -649,7 +649,7 @@ class _CalculatorPageState extends State<CalculatorPage> {
                                     86.0,
                                     desk.maxHeight * 0.35,
                                   );
-                                  final panelGap = compact ? 6.0 : 8.0;
+                                  final panelGap = compact ? 4.0 : 6.0;
                                   final keypadHeight = math.max(
                                     0.0,
                                     math.min(
@@ -688,8 +688,8 @@ class _CalculatorPageState extends State<CalculatorPage> {
                                                 _copyFeedback ==
                                                     (value: value, entry: null))
                                               Positioned(
-                                                top: 8,
-                                                left: 12,
+                                                top: 5,
+                                                left: 8,
                                                 child: IgnorePointer(
                                                   child: Semantics(
                                                     liveRegion: true,
