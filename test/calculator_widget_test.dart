@@ -680,19 +680,42 @@ void main() {
     final platform = tester.binding.platformDispatcher;
     platform.platformBrightnessTestValue = Brightness.dark;
     addTearDown(platform.clearPlatformBrightnessTestValue);
+    const navigationInset = FakeViewPadding(bottom: 24);
+    tester.view.padding = navigationInset;
+    tester.view.viewPadding = navigationInset;
+    addTearDown(tester.view.resetPadding);
+    addTearDown(tester.view.resetViewPadding);
     await _start(
       tester,
       saves,
       snapshot: CalculatorSnapshot.fromJson({'settings': <String, dynamic>{}}),
     );
 
-    Brightness brightness() =>
-        Theme.of(tester.element(find.byType(Scaffold).last)).brightness;
+    void expectTheme(Brightness brightness) {
+      expect(
+        Theme.of(tester.element(find.byType(Scaffold).last)).brightness,
+        brightness,
+      );
+      final overlay = SystemChrome.latestStyle!;
+      expect(overlay.systemNavigationBarColor, Colors.transparent);
+      expect(overlay.systemNavigationBarDividerColor, Colors.transparent);
+      expect(overlay.systemNavigationBarContrastEnforced, isFalse);
+      expect(
+        overlay.systemNavigationBarIconBrightness,
+        brightness == Brightness.dark ? Brightness.light : Brightness.dark,
+      );
+    }
 
-    expect(brightness(), Brightness.dark);
+    expectTheme(Brightness.dark);
+    expect(
+      tester.getBottomLeft(_key('=')).dy,
+      lessThanOrEqualTo(
+        tester.view.physicalSize.height - navigationInset.bottom,
+      ),
+    );
     platform.platformBrightnessTestValue = Brightness.light;
     await tester.pumpAndSettle();
-    expect(brightness(), Brightness.light);
+    expectTheme(Brightness.light);
 
     await tester.tap(find.byTooltip('设置'));
     await tester.pumpAndSettle();
@@ -701,7 +724,7 @@ void main() {
     await tester.pumpAndSettle();
     await tester.tap(find.text('深色'));
     await tester.pumpAndSettle();
-    expect(brightness(), Brightness.dark);
+    expectTheme(Brightness.dark);
 
     await tester.tap(find.text('快捷操作'));
     await tester.pumpAndSettle();
@@ -715,7 +738,7 @@ void main() {
     );
     expect(restored.settings.themeMode, ThemeMode.dark);
     await _start(tester, saves, snapshot: restored);
-    expect(brightness(), Brightness.dark);
+    expectTheme(Brightness.dark);
 
     await tester.tap(find.byTooltip('设置'));
     await tester.pumpAndSettle();
@@ -725,9 +748,9 @@ void main() {
     await tester.pumpAndSettle();
     platform.platformBrightnessTestValue = Brightness.dark;
     await tester.pumpAndSettle();
-    expect(brightness(), Brightness.light);
+    expectTheme(Brightness.light);
     expect(saves.last.settings.themeMode, ThemeMode.light);
-  });
+  }, variant: const TargetPlatformVariant({TargetPlatform.android}));
 
   testWidgets(
     'drag persists the portrait ratio and the narrow keypad remains usable',

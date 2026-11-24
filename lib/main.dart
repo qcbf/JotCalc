@@ -1,3 +1,4 @@
+import 'package:flutter/foundation.dart' show defaultTargetPlatform, kIsWeb;
 import 'package:flutter/services.dart';
 import 'package:material_ui/material_ui.dart';
 
@@ -59,6 +60,9 @@ ThemeData _calculatorTheme(Brightness brightness) {
 
 Future<void> main() async {
   WidgetsFlutterBinding.ensureInitialized();
+  if (!kIsWeb && defaultTargetPlatform == TargetPlatform.android) {
+    await SystemChrome.setEnabledSystemUIMode(SystemUiMode.edgeToEdge);
+  }
   final store = CalculatorStore();
   var snapshot = const CalculatorSnapshot();
   try {
@@ -114,13 +118,18 @@ class _JotCalcAppState extends State<JotCalcApp> {
       theme: brightness == Brightness.dark ? _darkTheme : _lightTheme,
       builder: (context, child) {
         final colors = Theme.of(context).colorScheme;
-        final overlay = colors.brightness == Brightness.dark
-            ? SystemUiOverlayStyle.light
-            : SystemUiOverlayStyle.dark;
+        final iconBrightness = colors.brightness == Brightness.dark
+            ? Brightness.light
+            : Brightness.dark;
         return AnnotatedRegion<SystemUiOverlayStyle>(
-          value: overlay.copyWith(
+          value: SystemUiOverlayStyle(
             statusBarColor: colors.surface,
-            systemNavigationBarColor: colors.surface,
+            statusBarBrightness: colors.brightness,
+            statusBarIconBrightness: iconBrightness,
+            systemNavigationBarColor: Colors.transparent,
+            systemNavigationBarDividerColor: Colors.transparent,
+            systemNavigationBarContrastEnforced: false,
+            systemNavigationBarIconBrightness: iconBrightness,
           ),
           child: child!,
         );
