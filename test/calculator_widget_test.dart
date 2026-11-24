@@ -1,5 +1,7 @@
 import 'dart:convert';
 
+import 'package:flutter/gestures.dart'
+    show kDoubleTapMinTime, kDoubleTapTimeout, kLongPressTimeout;
 import 'package:flutter/services.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:jotcalc/calculator_store.dart';
@@ -40,6 +42,22 @@ Future<void> _press(WidgetTester tester, List<String> keys) async {
 
 CalculationDisplay _display(WidgetTester tester) =>
     tester.widget(find.byType(CalculationDisplay));
+
+List<String> _captureClipboard() {
+  final copies = <String>[];
+  final messenger =
+      TestDefaultBinaryMessengerBinding.instance.defaultBinaryMessenger;
+  messenger.setMockMethodCallHandler(SystemChannels.platform, (call) async {
+    if (call.method == 'Clipboard.setData') {
+      copies.add((call.arguments as Map)['text'] as String);
+    }
+    return null;
+  });
+  addTearDown(
+    () => messenger.setMockMethodCallHandler(SystemChannels.platform, null),
+  );
+  return copies;
+}
 
 void main() {
   testWidgets(
@@ -191,21 +209,12 @@ void main() {
     'manual history can save an already confirmed value exactly once and copy it',
     (tester) async {
       final saves = <CalculatorSnapshot>[];
-      final messenger =
-          TestDefaultBinaryMessengerBinding.instance.defaultBinaryMessenger;
-      Object? clipboard;
-      messenger.setMockMethodCallHandler(SystemChannels.platform, (call) async {
-        if (call.method == 'Clipboard.setData') clipboard = call.arguments;
-        return null;
-      });
-      addTearDown(
-        () => messenger.setMockMethodCallHandler(SystemChannels.platform, null),
-      );
+      final copies = _captureClipboard();
 
       await _start(tester, saves);
       await tester.tap(find.byTooltip('设置'));
       await tester.pumpAndSettle();
-      await tester.tap(find.text('仅长按 = 添加到历史'));
+      await tester.tap(find.text('仅长按 = 或回车添加到历史'));
       await tester.pumpAndSettle();
       await tester.tap(find.byType(BackButton));
       await tester.pumpAndSettle();
@@ -213,7 +222,7 @@ void main() {
       await _press(tester, ['1', '4', '=']);
       expect(_display(tester).isResult, isTrue);
       expect(saves.single.history, isEmpty);
-      await tester.longPress(
+      await tester.tap(
         find.descendant(
           of: find.byType(CalculationDisplay),
           matching: find.byWidgetPredicate(
@@ -222,7 +231,7 @@ void main() {
         ),
       );
       await tester.pump();
-      expect(clipboard, {'text': '14'});
+      expect(copies, ['14']);
 
       await tester.longPress(_key('='));
       await tester.pump();
@@ -238,10 +247,53 @@ void main() {
     },
   );
 
+  testWidgets('short Enter computes and a held Enter saves once', (
+    tester,
+  ) async {
+    final saves = <CalculatorSnapshot>[];
+    await _start(
+      tester,
+      saves,
+      snapshot: const CalculatorSnapshot(
+        settings: CalculatorSettings(saveHistoryOnLongPress: true),
+      ),
+    );
+    await _press(tester, ['2', '+', '3']);
+    await tester.sendKeyEvent(LogicalKeyboardKey.enter);
+    await tester.pump(kLongPressTimeout);
+    expect(_display(tester).isResult, isTrue);
+    expect(saves, isEmpty);
+
+    await tester.sendKeyDownEvent(LogicalKeyboardKey.enter);
+    await tester.pump(kLongPressTimeout - const Duration(milliseconds: 1));
+    await tester.sendKeyRepeatEvent(LogicalKeyboardKey.enter);
+    expect(saves, isEmpty);
+    await tester.pump(const Duration(milliseconds: 1));
+    await tester.sendKeyRepeatEvent(LogicalKeyboardKey.enter);
+    await tester.sendKeyUpEvent(LogicalKeyboardKey.enter);
+    expect(saves.single.history.single.result, '5');
+
+    await _press(tester, ['9', '÷', '3']);
+    await tester.sendKeyDownEvent(LogicalKeyboardKey.numpadEnter);
+    await tester.pump(kLongPressTimeout);
+    await tester.sendKeyUpEvent(LogicalKeyboardKey.numpadEnter);
+    expect(saves.last.history.map((entry) => entry.result), ['5', '3']);
+
+    await _press(tester, ['2']);
+    await tester.sendKeyDownEvent(LogicalKeyboardKey.enter);
+    await tester.sendKeyEvent(LogicalKeyboardKey.digit9, character: '9');
+    await tester.pump(kLongPressTimeout);
+    await tester.sendKeyUpEvent(LogicalKeyboardKey.enter);
+    expect(_display(tester).controller.text, '9');
+    expect(_display(tester).isResult, isFalse);
+    expect(saves, hasLength(2));
+  });
+
   testWidgets(
-    'skips individual delete prompts but always confirms clearing history',
+    'copies history on one tap, recalls on two, and preserves confirmations',
     (tester) async {
       final saves = <CalculatorSnapshot>[];
+      final copies = _captureClipboard();
       await _start(
         tester,
         saves,
@@ -254,8 +306,16 @@ void main() {
         ),
       );
       await _press(tester, ['1', '+']);
+      await tester.tap(_historyText('7'));
+      await tester.pump(kDoubleTapTimeout);
+      expect(copies, ['7']);
+      expect(_display(tester).controller.text, '1+');
+
       await tester.tap(_historyText('8'));
-      await tester.pump();
+      await tester.pump(kDoubleTapMinTime);
+      await tester.tap(_historyText('8'));
+      await tester.pump(kDoubleTapTimeout);
+      expect(copies, ['7']);
       expect(_display(tester).controller.text, '2×4');
       expect(_display(tester).isResult, isTrue);
       expect(saves, isEmpty);
@@ -303,6 +363,36 @@ void main() {
       expect(_display(tester).isResult, isTrue);
     },
   );
+
+  testWidgets('recalling from the history drawer restores keyboard input', (
+    tester,
+  ) async {
+    final saves = <CalculatorSnapshot>[];
+    await _start(
+      tester,
+      saves,
+      size: const Size(300, 590),
+      snapshot: const CalculatorSnapshot(
+        history: [HistoryEntry(expression: '12+3', result: '15')],
+      ),
+    );
+    await tester.tap(find.byTooltip('历史记录'));
+    await tester.pumpAndSettle();
+    await tester.tap(_historyText('15'));
+    await tester.pump(kDoubleTapMinTime);
+    await tester.tap(_historyText('15'));
+    await tester.pumpAndSettle();
+
+    expect(_display(tester).isResult, isTrue);
+    FocusManager.instance.rootScope.requestFocus();
+    await tester.pump();
+    await tester.sendKeyEvent(LogicalKeyboardKey.equal, character: '+');
+    await tester.sendKeyEvent(LogicalKeyboardKey.digit1, character: '1');
+    await tester.sendKeyEvent(LogicalKeyboardKey.enter);
+    await tester.pump();
+    expect(saves.single.history.last.expression, '15+1');
+    expect(_display(tester).result, '16');
+  });
 
   testWidgets('hides the sidebar independently of history persistence', (
     tester,
@@ -392,6 +482,62 @@ void main() {
     await tester.pumpAndSettle();
     expect(find.text('设置'), findsOneWidget);
     expect(find.text('显示历史记录'), findsOneWidget);
+  });
+
+  testWidgets('follows system theme and saves an explicit theme preference', (
+    tester,
+  ) async {
+    final saves = <CalculatorSnapshot>[];
+    final platform = tester.binding.platformDispatcher;
+    platform.platformBrightnessTestValue = Brightness.dark;
+    addTearDown(platform.clearPlatformBrightnessTestValue);
+    await _start(
+      tester,
+      saves,
+      snapshot: CalculatorSnapshot.fromJson({'settings': <String, dynamic>{}}),
+    );
+
+    Brightness brightness() =>
+        Theme.of(tester.element(find.byType(Scaffold).last)).brightness;
+
+    expect(brightness(), Brightness.dark);
+    platform.platformBrightnessTestValue = Brightness.light;
+    await tester.pumpAndSettle();
+    expect(brightness(), Brightness.light);
+
+    await tester.tap(find.byTooltip('设置'));
+    await tester.pumpAndSettle();
+    expect(find.text('跟随系统'), findsOneWidget);
+    await tester.tap(find.text('主题'));
+    await tester.pumpAndSettle();
+    await tester.tap(find.text('深色'));
+    await tester.pumpAndSettle();
+    expect(brightness(), Brightness.dark);
+
+    await tester.tap(find.text('快捷操作'));
+    await tester.pumpAndSettle();
+    expect(find.textContaining('长按回车或 ='), findsOneWidget);
+    expect(find.textContaining('双击可载入计算区'), findsOneWidget);
+    await tester.tap(find.byType(TextButton));
+    await tester.pumpAndSettle();
+
+    final restored = CalculatorSnapshot.fromJson(
+      jsonDecode(jsonEncode(saves.single.toJson())) as Map<String, dynamic>,
+    );
+    expect(restored.settings.themeMode, ThemeMode.dark);
+    await _start(tester, saves, snapshot: restored);
+    expect(brightness(), Brightness.dark);
+
+    await tester.tap(find.byTooltip('设置'));
+    await tester.pumpAndSettle();
+    await tester.tap(find.text('主题'));
+    await tester.pumpAndSettle();
+    await tester.tap(find.text('浅色'));
+    await tester.pumpAndSettle();
+    platform.platformBrightnessTestValue = Brightness.dark;
+    await tester.pumpAndSettle();
+    expect(brightness(), Brightness.light);
+    expect(saves.last.settings.themeMode, ThemeMode.light);
   });
 
   testWidgets(

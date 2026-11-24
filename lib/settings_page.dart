@@ -27,32 +27,80 @@ class _SettingsPageState extends State<SettingsPage> {
     widget.onChanged(settings);
   }
 
-  Future<void> _chooseLanguage() async {
-    final strings = AppStrings.of(context);
-    final language = await showDialog<AppLanguage>(
+  Future<T?> _chooseOption<T>({
+    required String title,
+    required T selected,
+    required List<T> choices,
+    required Widget Function(T) label,
+  }) {
+    return showDialog<T>(
       context: context,
       builder: (context) => AlertDialog(
         scrollable: true,
-        title: Text(strings.language),
+        title: Text(title),
         contentPadding: const EdgeInsets.fromLTRB(8, 12, 8, 16),
-        content: RadioGroup<AppLanguage>(
-          groupValue: _settings.language,
+        content: RadioGroup<T>(
+          groupValue: selected,
           onChanged: (value) => Navigator.pop(context, value),
           child: Column(
             mainAxisSize: MainAxisSize.min,
             children: [
-              for (final choice in AppLanguage.values)
-                RadioListTile<AppLanguage>(
-                  value: choice,
-                  title: Text(choice.label, locale: choice.locale),
-                ),
+              for (final choice in choices)
+                RadioListTile<T>(value: choice, title: label(choice)),
             ],
           ),
         ),
       ),
     );
+  }
+
+  Future<void> _chooseLanguage() async {
+    final language = await _chooseOption(
+      title: AppStrings.of(context).language,
+      selected: _settings.language,
+      choices: AppLanguage.values,
+      label: (choice) => Text(choice.label, locale: choice.locale),
+    );
     if (!mounted || language == null || language == _settings.language) return;
     _update(_settings.copyWith(language: language));
+  }
+
+  Future<void> _chooseTheme() async {
+    final strings = AppStrings.of(context);
+    final mode = await _chooseOption(
+      title: strings.theme,
+      selected: _settings.themeMode,
+      choices: ThemeMode.values,
+      label: (choice) => Text(strings.themeModeLabel(choice)),
+    );
+    if (!mounted || mode == null || mode == _settings.themeMode) return;
+    _update(_settings.copyWith(themeMode: mode));
+  }
+
+  void _showShortcuts() {
+    final strings = AppStrings.of(context);
+    showDialog<void>(
+      context: context,
+      builder: (context) => AlertDialog(
+        scrollable: true,
+        title: Text(strings.shortcuts),
+        content: Column(
+          mainAxisSize: MainAxisSize.min,
+          crossAxisAlignment: CrossAxisAlignment.start,
+          spacing: 12,
+          children: [
+            for (final instruction in strings.shortcutInstructions)
+              Text(instruction),
+          ],
+        ),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.pop(context),
+            child: Text(MaterialLocalizations.of(context).closeButtonLabel),
+          ),
+        ],
+      ),
+    );
   }
 
   Future<void> _openAbout() async {
@@ -90,6 +138,12 @@ class _SettingsPageState extends State<SettingsPage> {
               trailing: const Icon(Icons.chevron_right_rounded),
               onTap: _chooseLanguage,
             ),
+            ListTile(
+              title: Text(strings.theme),
+              subtitle: Text(strings.themeModeLabel(_settings.themeMode)),
+              trailing: const Icon(Icons.chevron_right_rounded),
+              onTap: _chooseTheme,
+            ),
             SwitchListTile(
               title: Text(strings.persistHistory),
               subtitle: Text(strings.persistHistoryDescription),
@@ -110,6 +164,11 @@ class _SettingsPageState extends State<SettingsPage> {
                   _update(_settings.copyWith(saveHistoryOnLongPress: value)),
             ),
             const Divider(indent: 16, endIndent: 16),
+            ListTile(
+              title: Text(strings.shortcuts),
+              trailing: const Icon(Icons.chevron_right_rounded),
+              onTap: _showShortcuts,
+            ),
             ListTile(
               title: Text(strings.about),
               subtitle: Text(strings.projectPage),

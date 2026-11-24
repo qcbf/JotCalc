@@ -1,6 +1,7 @@
 import 'dart:async';
 import 'dart:math' as math;
 
+import 'package:flutter/gestures.dart' show kLongPressTimeout;
 import 'package:flutter/services.dart';
 import 'package:material_ui/material_ui.dart';
 
@@ -15,12 +16,12 @@ class CalculatorPage extends StatefulWidget {
     super.key,
     required this.initialSnapshot,
     required this.onSave,
-    required this.onLanguageChanged,
+    required this.onSettingsChanged,
   });
 
   final CalculatorSnapshot initialSnapshot;
   final Future<void> Function(CalculatorSnapshot) onSave;
-  final ValueChanged<AppLanguage> onLanguageChanged;
+  final ValueChanged<CalculatorSettings> onSettingsChanged;
 
   @override
   State<CalculatorPage> createState() => _CalculatorPageState();
@@ -36,13 +37,16 @@ class _CalculatorPageState extends State<CalculatorPage> {
   final _editor = TextEditingController();
   final _editorFocus = FocusNode();
   final _historyScroll = ScrollController();
+  final _scaffoldKey = GlobalKey<ScaffoldState>();
 
+  late final AppLifecycleListener _lifecycle;
   late CalculatorSettings _settings;
   late final List<HistoryEntry> _history;
   String _evaluatedExpression = '';
   String? _value;
-  String? _copiedValue;
+  ({String value, HistoryEntry? entry})? _copyFeedback;
   Timer? _copyFeedbackTimer;
+  ({PhysicalKeyboardKey key, Timer timer})? _enterHold;
   CalculationIssue? _issue;
   bool _isResult = false;
   bool _showIssue = false;
@@ -56,10 +60,15 @@ class _CalculatorPageState extends State<CalculatorPage> {
     _settings = widget.initialSnapshot.settings;
     _history = List.of(widget.initialSnapshot.history);
     _editor.addListener(_evaluateDraft);
+    _lifecycle = AppLifecycleListener(onInactive: _cancelEnterHold);
+    FocusManager.instance.addLateKeyEventHandler(_onUnhandledKey);
   }
 
   @override
   void dispose() {
+    FocusManager.instance.removeLateKeyEventHandler(_onUnhandledKey);
+    _lifecycle.dispose();
+    _cancelEnterHold();
     _copyFeedbackTimer?.cancel();
     _editor.dispose();
     _editorFocus.dispose();
@@ -70,6 +79,7 @@ class _CalculatorPageState extends State<CalculatorPage> {
   void _evaluateDraft() {
     final expression = _editor.text;
     if (expression == _evaluatedExpression) return;
+    _cancelEnterHold();
 
     String? value;
     CalculationIssue? issue;
@@ -91,6 +101,7 @@ class _CalculatorPageState extends State<CalculatorPage> {
 
   void _editExpression() {
     if (!_isResult) return;
+    _cancelEnterHold();
     setState(() {
       _isResult = false;
       _recordedCurrentResult = false;
@@ -104,22 +115,54 @@ class _CalculatorPageState extends State<CalculatorPage> {
     );
   }
 
-  KeyEventResult _onHardwareKey(FocusNode scope, KeyEvent event) {
-    if (event is KeyUpEvent || event.synthesized) return KeyEventResult.ignored;
+  bool get _calculatorIsActive {
+    final scaffold = _scaffoldKey.currentState;
+    return ModalRoute.isCurrentOf(context) == true &&
+        scaffold != null &&
+        !(scaffold.hasDrawer && scaffold.isDrawerOpen);
+  }
+
+  KeyEventResult _onHardwareKey(FocusNode scope, KeyEvent event) =>
+      _handleHardwareKey(
+        event,
+        canConfirm: scope.hasPrimaryFocus || _editorFocus.hasFocus,
+      );
+
+  // Closing a Web drawer can leave focus outside the calculator's scope.
+  KeyEventResult _onUnhandledKey(KeyEvent event) =>
+      _handleHardwareKey(event, canConfirm: true);
+
+  KeyEventResult _handleHardwareKey(
+    KeyEvent event, {
+    required bool canConfirm,
+  }) {
+    if (event is KeyUpEvent) {
+      if (_enterHold?.key == event.physicalKey) _cancelEnterHold();
+      return KeyEventResult.ignored;
+    }
+    if (event.synthesized || !_calculatorIsActive) {
+      return KeyEventResult.ignored;
+    }
 
     final keyboard = HardwareKeyboard.instance;
     if (keyboard.isControlPressed ||
         keyboard.isMetaPressed ||
         keyboard.isAltPressed) {
+      _cancelEnterHold();
       return KeyEventResult.ignored;
+    }
+
+    final isEnter =
+        event.logicalKey == LogicalKeyboardKey.enter ||
+        event.logicalKey == LogicalKeyboardKey.numpadEnter;
+    if (isEnter && canConfirm) {
+      if (event is KeyDownEvent) _pressEnter(event.physicalKey);
+      return KeyEventResult.handled;
     }
 
     final key = switch (event.logicalKey) {
       LogicalKeyboardKey.delete => 'C',
       LogicalKeyboardKey.backspace => '⌫',
-      LogicalKeyboardKey.enter || LogicalKeyboardKey.numpadEnter
-          when scope.hasPrimaryFocus || _editorFocus.hasFocus =>
-        '=',
       _ => switch (event.character) {
         '-' => '−',
         '*' => '×',
@@ -135,6 +178,31 @@ class _CalculatorPageState extends State<CalculatorPage> {
 
     _onKey(key);
     return KeyEventResult.handled;
+  }
+
+  void _pressEnter(PhysicalKeyboardKey key) {
+    _cancelEnterHold();
+    _confirm();
+    if (!_settings.saveHistoryOnLongPress ||
+        _value == null ||
+        _recordedCurrentResult) {
+      return;
+    }
+    _enterHold = (
+      key: key,
+      timer: Timer(kLongPressTimeout, () {
+        _enterHold = null;
+        if (_calculatorIsActive &&
+            HardwareKeyboard.instance.isPhysicalKeyPressed(key)) {
+          _confirm(addToHistory: true);
+        }
+      }),
+    );
+  }
+
+  void _cancelEnterHold() {
+    _enterHold?.timer.cancel();
+    _enterHold = null;
   }
 
   void _onKey(String key) {
@@ -236,7 +304,7 @@ class _CalculatorPageState extends State<CalculatorPage> {
   }
 
   void _recall(HistoryEntry entry) {
-    _editorFocus.unfocus();
+    _cancelEnterHold();
     setState(() {
       _evaluatedExpression = entry.expression;
       _replaceExpression(entry.expression);
@@ -246,6 +314,7 @@ class _CalculatorPageState extends State<CalculatorPage> {
       _isResult = true;
       _recordedCurrentResult = true;
     });
+    _editorFocus.requestFocus();
   }
 
   Future<void> _deleteEntry(HistoryEntry entry) async {
@@ -313,7 +382,9 @@ class _CalculatorPageState extends State<CalculatorPage> {
             child: Text(MaterialLocalizations.of(context).cancelButtonLabel),
           ),
           TextButton(
-            style: TextButton.styleFrom(foregroundColor: JotCalcColors.error),
+            style: TextButton.styleFrom(
+              foregroundColor: Theme.of(context).colorScheme.error,
+            ),
             onPressed: () => Navigator.pop(context, true),
             child: Text(strings.clearHistory),
           ),
@@ -329,7 +400,10 @@ class _CalculatorPageState extends State<CalculatorPage> {
     if (_settings.persistHistory) await _save();
   }
 
-  Future<void> _copyValue(String value) async {
+  Future<void> _copyHistoryResult(HistoryEntry entry) =>
+      _copyValue(entry.result, historyEntry: entry);
+
+  Future<void> _copyValue(String value, {HistoryEntry? historyEntry}) async {
     try {
       await Clipboard.setData(ClipboardData(text: value.replaceAll('−', '-')));
     } on PlatformException catch (error) {
@@ -338,10 +412,10 @@ class _CalculatorPageState extends State<CalculatorPage> {
       return;
     }
     if (!mounted) return;
-    setState(() => _copiedValue = value);
+    setState(() => _copyFeedback = (value: value, entry: historyEntry));
     _copyFeedbackTimer?.cancel();
     _copyFeedbackTimer = Timer(const Duration(seconds: 1), () {
-      setState(() => _copiedValue = null);
+      setState(() => _copyFeedback = null);
     });
   }
 
@@ -352,9 +426,8 @@ class _CalculatorPageState extends State<CalculatorPage> {
         builder: (context) => SettingsPage(
           initialSettings: _settings,
           onChanged: (settings) {
-            final languageChanged = _settings.language != settings.language;
             setState(() => _settings = settings);
-            if (languageChanged) widget.onLanguageChanged(settings.language);
+            widget.onSettingsChanged(settings);
             _save();
           },
         ),
@@ -423,15 +496,16 @@ class _CalculatorPageState extends State<CalculatorPage> {
   @override
   Widget build(BuildContext context) {
     final strings = AppStrings.of(context);
+    final colors = Theme.of(context).colorScheme;
     final clearHistoryButton = IconButton(
       tooltip: strings.clearHistory,
       onPressed: _history.isEmpty ? null : _clearHistory,
-      color: JotCalcColors.muted,
+      color: colors.onSurfaceVariant,
       padding: EdgeInsets.zero,
       icon: const Icon(Icons.delete_outline),
     );
     return ColoredBox(
-      color: Colors.white,
+      color: colors.surface,
       child: SafeArea(
         child: LayoutBuilder(
           builder: (context, bounds) {
@@ -457,10 +531,14 @@ class _CalculatorPageState extends State<CalculatorPage> {
                 _resizeHistory(delta, width, maxHistoryWidth, landscape);
 
             return Scaffold(
+              key: _scaffoldKey,
               drawerEnableOpenDragGesture: false,
+              onDrawerChanged: (isOpen) {
+                if (isOpen) _cancelEnterHold();
+              },
               drawer: drawerHistory
                   ? Drawer(
-                      backgroundColor: JotCalcColors.paper,
+                      backgroundColor: colors.surfaceContainerLow,
                       child: Builder(
                         builder: (context) => HistoryPane(
                           header: ListTile(
@@ -478,8 +556,10 @@ class _CalculatorPageState extends State<CalculatorPage> {
                             ),
                           ),
                           entries: _history,
+                          copiedEntry: _copyFeedback?.entry,
                           controller: _historyScroll,
-                          onSelect: (entry) {
+                          onCopy: _copyHistoryResult,
+                          onRecall: (entry) {
                             Scaffold.of(context).closeDrawer();
                             _recall(entry);
                           },
@@ -490,6 +570,9 @@ class _CalculatorPageState extends State<CalculatorPage> {
                   : null,
               body: FocusScope(
                 autofocus: true,
+                onFocusChange: (hasFocus) {
+                  if (!hasFocus) _cancelEnterHold();
+                },
                 onKeyEvent: _onHardwareKey,
                 child: Row(
                   crossAxisAlignment: CrossAxisAlignment.stretch,
@@ -523,8 +606,10 @@ class _CalculatorPageState extends State<CalculatorPage> {
                             ],
                           ),
                           entries: _history,
+                          copiedEntry: _copyFeedback?.entry,
                           controller: _historyScroll,
-                          onSelect: _recall,
+                          onCopy: _copyHistoryResult,
+                          onRecall: _recall,
                           onDelete: _deleteEntry,
                           showDivider: true,
                         ),
@@ -542,9 +627,9 @@ class _CalculatorPageState extends State<CalculatorPage> {
                                       tooltip: strings.history,
                                       onPressed: Scaffold.of(context)
                                           .openDrawer,
-                                      icon: const Icon(
+                                      icon: Icon(
                                         Icons.history_rounded,
-                                        color: JotCalcColors.muted,
+                                        color: colors.onSurfaceVariant,
                                       ),
                                     ),
                                   ),
@@ -600,7 +685,8 @@ class _CalculatorPageState extends State<CalculatorPage> {
                                                   : () => _copyValue(value),
                                             ),
                                             if (value != null &&
-                                                _copiedValue == value)
+                                                _copyFeedback ==
+                                                    (value: value, entry: null))
                                               Positioned(
                                                 top: 8,
                                                 left: 12,
@@ -609,9 +695,8 @@ class _CalculatorPageState extends State<CalculatorPage> {
                                                     liveRegion: true,
                                                     child: Text(
                                                       strings.copied,
-                                                      style: const TextStyle(
-                                                        color: JotCalcColors
-                                                            .accent,
+                                                      style: TextStyle(
+                                                        color: colors.primary,
                                                         fontSize: 12,
                                                       ),
                                                     ),

@@ -1,19 +1,13 @@
+import 'dart:async';
 import 'dart:math' as math;
 
+import 'package:flutter/gestures.dart' show kDoubleTapTimeout;
+import 'package:flutter/semantics.dart' show CustomSemanticsAction;
 import 'package:flutter/services.dart';
 import 'package:material_ui/material_ui.dart';
 
 import 'app_localization.dart';
 import 'calculator_store.dart';
-
-abstract final class JotCalcColors {
-  static const paper = Color(0xFFF3EFE4);
-  static const ink = Color(0xFF1F2328);
-  static const muted = Color(0xFF5B6169);
-  static const accent = Color(0xFF0F6E6E);
-  static const outline = Color(0xFFC9CDD3);
-  static const error = Color(0xFF8F2323);
-}
 
 const _tabularFigures = [FontFeature.tabularFigures()];
 
@@ -26,8 +20,9 @@ class SettingsButton extends StatelessWidget {
   Widget build(BuildContext context) => IconButton(
     tooltip: AppStrings.of(context).settings,
     onPressed: onPressed,
+    color: Theme.of(context).colorScheme.onSurfaceVariant,
     padding: EdgeInsets.zero,
-    icon: const Icon(Icons.more_horiz, color: JotCalcColors.muted),
+    icon: const Icon(Icons.more_horiz),
   );
 }
 
@@ -50,6 +45,7 @@ class HistoryResizeHandle extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final strings = AppStrings.of(context);
+    final colors = Theme.of(context).colorScheme;
     return Semantics(
       label: strings.historyWidth((fraction * 100).round()),
       onIncrease: onWiden,
@@ -64,12 +60,12 @@ class HistoryResizeHandle extends StatelessWidget {
             onHorizontalDragUpdate: (details) => onDrag(details.delta.dx),
             onHorizontalDragEnd: (_) => onDragDone(),
             onHorizontalDragCancel: onDragDone,
-            child: const SizedBox(
+            child: SizedBox(
               width: 48,
               height: 48,
               child: Icon(
                 Icons.drag_indicator_rounded,
-                color: JotCalcColors.muted,
+                color: colors.onSurfaceVariant,
                 size: 22,
               ),
             ),
@@ -86,22 +82,27 @@ class HistoryPane extends StatelessWidget {
     required this.header,
     required this.entries,
     required this.controller,
-    required this.onSelect,
+    required this.onCopy,
+    required this.onRecall,
     required this.onDelete,
+    this.copiedEntry,
     this.showDivider = false,
   });
 
   final Widget header;
   final List<HistoryEntry> entries;
   final ScrollController controller;
-  final ValueChanged<HistoryEntry> onSelect;
+  final ValueChanged<HistoryEntry> onCopy;
+  final ValueChanged<HistoryEntry> onRecall;
   final ValueChanged<HistoryEntry> onDelete;
+  final HistoryEntry? copiedEntry;
   final bool showDivider;
 
   @override
   Widget build(BuildContext context) {
+    final colors = Theme.of(context).colorScheme;
     return Material(
-      color: JotCalcColors.paper,
+      color: colors.surfaceContainerLow,
       child: Stack(
         children: [
           Column(
@@ -117,8 +118,8 @@ class HistoryPane extends StatelessWidget {
                           child: Text(
                             AppStrings.of(context).noHistory,
                             textAlign: TextAlign.center,
-                            style: const TextStyle(
-                              color: JotCalcColors.muted,
+                            style: TextStyle(
+                              color: colors.onSurfaceVariant,
                               fontSize: 12,
                             ),
                           ),
@@ -134,8 +135,10 @@ class HistoryPane extends StatelessWidget {
                           return _HistoryRow(
                             key: ObjectKey(entry),
                             entry: entry,
-                            onTap: () => onSelect(entry),
-                            onLongPress: () => onDelete(entry),
+                            copied: entry == copiedEntry,
+                            onCopy: () => onCopy(entry),
+                            onRecall: () => onRecall(entry),
+                            onDelete: () => onDelete(entry),
                           );
                         },
                       ),
@@ -143,13 +146,15 @@ class HistoryPane extends StatelessWidget {
             ],
           ),
           if (showDivider)
-            const Positioned(
+            Positioned(
               top: 0,
               right: 0,
               bottom: 0,
               width: 1,
               child: IgnorePointer(
-                child: CustomPaint(painter: _PaperRule(Axis.vertical)),
+                child: CustomPaint(
+                  painter: _PaperRule(Axis.vertical, colors.outline),
+                ),
               ),
             ),
         ],
@@ -158,58 +163,132 @@ class HistoryPane extends StatelessWidget {
   }
 }
 
-class _HistoryRow extends StatelessWidget {
+class _HistoryRow extends StatefulWidget {
   const _HistoryRow({
     super.key,
     required this.entry,
-    required this.onTap,
-    required this.onLongPress,
+    required this.copied,
+    required this.onCopy,
+    required this.onRecall,
+    required this.onDelete,
   });
 
   final HistoryEntry entry;
-  final VoidCallback onTap;
-  final VoidCallback onLongPress;
+  final bool copied;
+  final VoidCallback onCopy;
+  final VoidCallback onRecall;
+  final VoidCallback onDelete;
+
+  @override
+  State<_HistoryRow> createState() => _HistoryRowState();
+}
+
+class _HistoryRowState extends State<_HistoryRow> {
+  Timer? _tapTimer;
+
+  void _handleTap() {
+    final pendingTap = _tapTimer;
+    if (pendingTap != null) {
+      pendingTap.cancel();
+      _tapTimer = null;
+      widget.onRecall();
+      return;
+    }
+
+    // Flutter Web can deliver a double-click as two separate semantic taps.
+    _tapTimer = Timer(kDoubleTapTimeout, () {
+      _tapTimer = null;
+      widget.onCopy();
+    });
+  }
+
+  @override
+  void dispose() {
+    _tapTimer?.cancel();
+    super.dispose();
+  }
 
   @override
   Widget build(BuildContext context) {
+    final strings = AppStrings.of(context);
+    final colors = Theme.of(context).colorScheme;
+    final entry = widget.entry;
     return Column(
       crossAxisAlignment: CrossAxisAlignment.stretch,
       children: [
-        const SizedBox(
+        SizedBox(
           height: 1,
-          child: CustomPaint(painter: _PaperRule(Axis.horizontal)),
+          child: CustomPaint(
+            painter: _PaperRule(
+              Axis.horizontal,
+              colors.outline.withValues(alpha: 0.6),
+            ),
+          ),
         ),
-        InkWell(
-          onTap: onTap,
-          onLongPress: onLongPress,
-          child: Padding(
-            padding: const EdgeInsets.symmetric(vertical: 6, horizontal: 2),
-            child: Column(
-              crossAxisAlignment: CrossAxisAlignment.end,
-              children: [
-                Text(
-                  entry.expression,
-                  textAlign: TextAlign.right,
-                  overflow: TextOverflow.ellipsis,
-                  maxLines: 2,
-                  style: const TextStyle(
-                    color: JotCalcColors.muted,
-                    fontSize: 11,
-                    fontFeatures: _tabularFigures,
+        Semantics(
+          onTapHint: strings.copyResult,
+          onLongPressHint: strings.delete,
+          customSemanticsActions: {
+            CustomSemanticsAction(label: strings.recallCalculation):
+                widget.onRecall,
+          },
+          child: InkWell(
+            onTap: _handleTap,
+            onLongPress: widget.onDelete,
+            child: Padding(
+              padding: const EdgeInsets.symmetric(vertical: 6, horizontal: 2),
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.end,
+                children: [
+                  Text(
+                    entry.expression,
+                    textAlign: TextAlign.right,
+                    overflow: TextOverflow.ellipsis,
+                    maxLines: 2,
+                    style: TextStyle(
+                      color: colors.onSurfaceVariant,
+                      fontSize: 11,
+                      fontFeatures: _tabularFigures,
+                    ),
                   ),
-                ),
-                const SizedBox(height: 2),
-                Text(
-                  entry.result,
-                  maxLines: 1,
-                  overflow: TextOverflow.ellipsis,
-                  style: const TextStyle(
-                    fontSize: 16,
-                    fontWeight: FontWeight.w600,
-                    fontFeatures: _tabularFigures,
+                  const SizedBox(height: 2),
+                  Row(
+                    mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                    children: [
+                      if (widget.copied)
+                        Flexible(
+                          child: Semantics(
+                            liveRegion: true,
+                            child: Text(
+                              strings.copied,
+                              maxLines: 1,
+                              overflow: TextOverflow.ellipsis,
+                              style: TextStyle(
+                                color: colors.primary,
+                                fontSize: 11,
+                              ),
+                            ),
+                          ),
+                        )
+                      else
+                        const SizedBox.shrink(),
+                      Flexible(
+                        flex: 2,
+                        child: Text(
+                          entry.result,
+                          maxLines: 1,
+                          overflow: TextOverflow.ellipsis,
+                          style: const TextStyle(
+                            fontSize: 16,
+                            fontWeight: FontWeight.w600,
+                            fontFeatures: _tabularFigures,
+                          ),
+                        ),
+                      ),
+                    ],
                   ),
-                ),
-              ],
+                ],
+              ),
             ),
           ),
         ),
@@ -219,9 +298,10 @@ class _HistoryRow extends StatelessWidget {
 }
 
 class _PaperRule extends CustomPainter {
-  const _PaperRule(this.axis);
+  const _PaperRule(this.axis, this.color);
 
   final Axis axis;
+  final Color color;
 
   @override
   void paint(Canvas canvas, Size size) {
@@ -229,7 +309,7 @@ class _PaperRule extends CustomPainter {
     final length = vertical ? size.height : size.width;
     final mark = vertical ? 4.0 : 1.25;
     final paint = Paint()
-      ..color = vertical ? const Color(0xFFB9B2A0) : const Color(0xFFCFC8B5)
+      ..color = color
       ..strokeWidth = 1;
     for (var start = 0.0; start < length; start += mark + 3) {
       final end = math.min(start + mark, length);
@@ -243,7 +323,7 @@ class _PaperRule extends CustomPainter {
 
   @override
   bool shouldRepaint(covariant _PaperRule oldDelegate) =>
-      oldDelegate.axis != axis;
+      oldDelegate.axis != axis || oldDelegate.color != color;
 }
 
 class CalculationDisplay extends StatelessWidget {
@@ -287,8 +367,9 @@ class CalculationDisplay extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final strings = AppStrings.of(context);
+    final colors = Theme.of(context).colorScheme;
     final expressionStyle = TextStyle(
-      color: isResult ? JotCalcColors.muted : JotCalcColors.ink,
+      color: isResult ? colors.onSurfaceVariant : colors.onSurface,
       fontSize: isResult ? smallFontSize : largeFontSize,
       fontWeight: isResult ? FontWeight.w400 : FontWeight.w600,
       fontFeatures: _tabularFigures,
@@ -296,10 +377,11 @@ class CalculationDisplay extends StatelessWidget {
       height: 1.12,
     );
     final caption = error ?? result;
+    final copy = error == null ? onCopy : null;
     return DecoratedBox(
       decoration: BoxDecoration(
         border: Border.all(
-          color: error == null ? JotCalcColors.outline : JotCalcColors.error,
+          color: error == null ? colors.outlineVariant : colors.error,
         ),
         borderRadius: BorderRadius.circular(12),
       ),
@@ -325,7 +407,7 @@ class CalculationDisplay extends StatelessWidget {
                       maxLines: null,
                       textAlign: TextAlign.right,
                       scrollPadding: EdgeInsets.zero,
-                      cursorColor: JotCalcColors.accent,
+                      cursorColor: colors.primary,
                       style: expressionStyle,
                       decoration: InputDecoration.collapsed(
                         hintText: '0',
@@ -343,38 +425,45 @@ class CalculationDisplay extends StatelessWidget {
                         ? (isResult ? strings.result : strings.previewResult)
                         : strings.calculationError,
                     liveRegion: isResult || error != null,
+                    button: copy != null,
+                    onTapHint: copy == null ? null : strings.copyResult,
                     child: GestureDetector(
                       behavior: HitTestBehavior.opaque,
-                      onLongPress: error == null ? onCopy : null,
-                      child: Align(
-                        alignment: Alignment.centerRight,
-                        child: ConstrainedBox(
-                          constraints: BoxConstraints(
-                            maxHeight: constraints.maxHeight * 0.64,
-                          ),
-                          child: SingleChildScrollView(
-                            scrollDirection: Axis.horizontal,
-                            reverse: true,
-                            child: FittedBox(
-                              fit: BoxFit.scaleDown,
-                              alignment: Alignment.centerRight,
-                              child: Text(
-                                caption,
-                                maxLines: 1,
-                                style: TextStyle(
-                                  color: error != null
-                                      ? JotCalcColors.error
-                                      : (isResult
-                                            ? JotCalcColors.ink
-                                            : JotCalcColors.muted),
-                                  fontSize: isResult
-                                      ? largeFontSize
-                                      : smallFontSize,
-                                  fontWeight: isResult
-                                      ? FontWeight.w600
-                                      : FontWeight.w400,
-                                  fontFeatures: _tabularFigures,
-                                  height: 1.12,
+                      onTap: copy,
+                      child: MouseRegion(
+                        cursor: copy == null
+                            ? MouseCursor.defer
+                            : SystemMouseCursors.click,
+                        child: Align(
+                          alignment: Alignment.centerRight,
+                          child: ConstrainedBox(
+                            constraints: BoxConstraints(
+                              maxHeight: constraints.maxHeight * 0.64,
+                            ),
+                            child: SingleChildScrollView(
+                              scrollDirection: Axis.horizontal,
+                              reverse: true,
+                              child: FittedBox(
+                                fit: BoxFit.scaleDown,
+                                alignment: Alignment.centerRight,
+                                child: Text(
+                                  caption,
+                                  maxLines: 1,
+                                  style: TextStyle(
+                                    color: error != null
+                                        ? colors.error
+                                        : (isResult
+                                              ? colors.onSurface
+                                              : colors.onSurfaceVariant),
+                                    fontSize: isResult
+                                        ? largeFontSize
+                                        : smallFontSize,
+                                    fontWeight: isResult
+                                        ? FontWeight.w600
+                                        : FontWeight.w400,
+                                    fontFeatures: _tabularFigures,
+                                    height: 1.12,
+                                  ),
                                 ),
                               ),
                             ),
@@ -453,20 +542,25 @@ class _KeyButton extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final strings = AppStrings.of(context);
+    final colors = Theme.of(context).colorScheme;
     final (background, foreground, label) = switch (symbol) {
-      'C' => (const Color(0xFFF7E6E6), JotCalcColors.error, strings.clear),
-      '⌫' => (const Color(0xFFF7E6E6), JotCalcColors.error, strings.backspace),
+      'C' => (colors.errorContainer, colors.onErrorContainer, strings.clear),
+      '⌫' => (
+        colors.errorContainer,
+        colors.onErrorContainer,
+        strings.backspace,
+      ),
       '%' => (
-        const Color(0xFFE1EEEE),
-        const Color(0xFF0B4F4F),
+        colors.secondaryContainer,
+        colors.onSecondaryContainer,
         strings.percent,
       ),
       '÷' ||
       '×' ||
       '−' ||
-      '+' => (const Color(0xFFE1EEEE), const Color(0xFF0B4F4F), symbol),
-      '=' => (JotCalcColors.accent, Colors.white, strings.equals),
-      _ => (const Color(0xFFF0F1F3), JotCalcColors.ink, symbol),
+      '+' => (colors.secondaryContainer, colors.onSecondaryContainer, symbol),
+      '=' => (colors.primary, colors.onPrimary, strings.equals),
+      _ => (colors.surfaceContainerHighest, colors.onSurface, symbol),
     };
 
     return Semantics(

@@ -14,17 +14,18 @@ on:
         type: string
 
 permissions:
-  contents: write
+  contents: read
+
+env:
+  RELEASE_TAG: ${{ github.event_name == 'workflow_dispatch' && inputs.tag || github.ref_name }}
 
 concurrency:
   group: release-${{ github.event_name == 'workflow_dispatch' && inputs.tag || github.ref_name }}
   cancel-in-progress: false
 
 jobs:
-  build-and-publish:
+  build-web-android:
     runs-on: ubuntu-latest
-    env:
-      RELEASE_TAG: ${{ github.event_name == 'workflow_dispatch' && inputs.tag || github.ref_name }}
 
     steps:
       - name: Check out the release tag
@@ -99,7 +100,77 @@ jobs:
             cp "build/app/outputs/flutter-apk/app-${abi}-release.apk" \
               "build/release-assets/jotcalc-${RELEASE_TAG}-${abi}.apk"
           done
-          (cd build/release-assets && sha256sum *.apk *.zip > "jotcalc-${RELEASE_TAG}-SHA256SUMS.txt")
+
+      - name: Upload Web and Android packages
+        uses: actions/upload-artifact@v4
+        with:
+          name: web-android
+          path: build/release-assets/
+          if-no-files-found: error
+          compression-level: 0
+
+  build-windows:
+    runs-on: windows-2025
+    outputs:
+      archive: ${{ steps.upload.outputs.artifact-id }}
+
+    steps:
+      - name: Check out the release tag
+        uses: actions/checkout@v4
+        with:
+          ref: refs/tags/${{ env.RELEASE_TAG }}
+
+      - name: Set up Flutter
+        id: flutter
+        if: hashFiles('windows/CMakeLists.txt') != ''
+        uses: subosito/flutter-action@v2
+        with:
+          channel: stable
+          cache: true
+
+      - name: Build and package Windows x64
+        id: package
+        if: steps.flutter.outcome == 'success'
+        shell: cmd
+        run: call tool\build_windows_release.bat
+
+      - name: Upload Windows package
+        id: upload
+        if: steps.package.outcome == 'success'
+        uses: actions/upload-artifact@v4
+        with:
+          name: windows-x64
+          path: build/jotcalc-windows-x64.zip
+          if-no-files-found: error
+          compression-level: 0
+
+  publish:
+    needs: [build-web-android, build-windows]
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+
+    steps:
+      - name: Download Web and Android packages
+        uses: actions/download-artifact@v4
+        with:
+          name: web-android
+          path: build/release-assets
+
+      - name: Download Windows package
+        if: needs.build-windows.outputs.archive != ''
+        uses: actions/download-artifact@v4
+        with:
+          name: windows-x64
+          path: build/windows-release
+
+      - name: Name the Windows release asset
+        if: needs.build-windows.outputs.archive != ''
+        run: mv build/windows-release/jotcalc-windows-x64.zip "build/release-assets/jotcalc-${RELEASE_TAG}-windows-x64.zip"
+
+      - name: Write release checksums
+        working-directory: build/release-assets
+        run: sha256sum *.apk *.zip > "jotcalc-${RELEASE_TAG}-SHA256SUMS.txt"
 
       - name: Publish GitHub Release
         uses: softprops/action-gh-release@v2
@@ -108,9 +179,4 @@ jobs:
           name: JotCalc ${{ env.RELEASE_TAG }}
           generate_release_notes: true
           fail_on_unmatched_files: true
-          files: |
-            build/release-assets/jotcalc-${{ env.RELEASE_TAG }}-web.zip
-            build/release-assets/jotcalc-${{ env.RELEASE_TAG }}-arm64-v8a.apk
-            build/release-assets/jotcalc-${{ env.RELEASE_TAG }}-armeabi-v7a.apk
-            build/release-assets/jotcalc-${{ env.RELEASE_TAG }}-x86_64.apk
-            build/release-assets/jotcalc-${{ env.RELEASE_TAG }}-SHA256SUMS.txt
+          files: build/release-assets/*

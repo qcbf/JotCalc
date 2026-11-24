@@ -1,5 +1,5 @@
 name: jotcalc
-description: A tape-style calculator for Android and the web.
+description: A tape-style calculator for Android, Windows, and the web.
 publish_to: none
 version: 1.0.0+2
 environment:

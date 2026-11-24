@@ -1,5 +1,6 @@
 import 'dart:convert';
 
+import 'package:material_ui/material_ui.dart' show ThemeMode;
 import 'package:shared_preferences/shared_preferences.dart';
 
 import 'app_localization.dart';
@@ -7,6 +8,7 @@ import 'app_localization.dart';
 class CalculatorSettings {
   const CalculatorSettings({
     this.language = AppLanguage.simplifiedChinese,
+    this.themeMode = ThemeMode.system,
     this.persistHistory = true,
     this.showHistory = true,
     this.saveHistoryOnLongPress = false,
@@ -17,6 +19,10 @@ class CalculatorSettings {
   factory CalculatorSettings.fromJson(Map<String, dynamic> json) {
     return CalculatorSettings(
       language: AppLanguage.fromTag(json['language']),
+      themeMode: ThemeMode.values.firstWhere(
+        (mode) => mode.name == json['themeMode'],
+        orElse: () => ThemeMode.system,
+      ),
       persistHistory: json['persistHistory'] != false,
       showHistory: json['showHistory'] != false,
       saveHistoryOnLongPress: json['saveHistoryOnLongPress'] == true,
@@ -32,6 +38,7 @@ class CalculatorSettings {
   }
 
   final AppLanguage language;
+  final ThemeMode themeMode;
   final bool persistHistory;
   final bool showHistory;
   final bool saveHistoryOnLongPress;
@@ -40,6 +47,7 @@ class CalculatorSettings {
 
   CalculatorSettings copyWith({
     AppLanguage? language,
+    ThemeMode? themeMode,
     bool? persistHistory,
     bool? showHistory,
     bool? saveHistoryOnLongPress,
@@ -47,6 +55,7 @@ class CalculatorSettings {
     double? landscapeHistoryFraction,
   }) => CalculatorSettings(
     language: language ?? this.language,
+    themeMode: themeMode ?? this.themeMode,
     persistHistory: persistHistory ?? this.persistHistory,
     showHistory: showHistory ?? this.showHistory,
     saveHistoryOnLongPress:
@@ -59,6 +68,7 @@ class CalculatorSettings {
 
   Map<String, Object> toJson() => {
     'language': language.locale.toLanguageTag(),
+    'themeMode': themeMode.name,
     'persistHistory': persistHistory,
     'showHistory': showHistory,
     'saveHistoryOnLongPress': saveHistoryOnLongPress,
