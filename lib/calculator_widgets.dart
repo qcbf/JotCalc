@@ -239,6 +239,14 @@ class _HistoryRowState extends State<_HistoryRow> {
               child: Column(
                 crossAxisAlignment: CrossAxisAlignment.end,
                 children: [
+                  if (entry.programmerFormat case final format?)
+                    Text(
+                      '${format.radix.label} · ${format.wordSize.label}',
+                      style: TextStyle(
+                        color: colors.onSurfaceVariant,
+                        fontSize: 10,
+                      ),
+                    ),
                   Text(
                     entry.expression,
                     textAlign: TextAlign.right,
@@ -366,9 +374,12 @@ class CalculationDisplay extends StatelessWidget {
     required this.largeFontSize,
     required this.smallFontSize,
     this.allowAdvancedInput = false,
+    this.inputFormatter,
     this.result,
     this.error,
     this.onCopy,
+    this.copied = false,
+    this.footer,
   });
 
   static final _expressionFormatter = _formatter(RegExp(r'^[0-9.+−×÷% ]*$'));
@@ -391,9 +402,12 @@ class CalculationDisplay extends StatelessWidget {
   final bool allowAdvancedInput;
   final double largeFontSize;
   final double smallFontSize;
+  final TextInputFormatter? inputFormatter;
   final String? result;
   final String? error;
   final VoidCallback? onCopy;
+  final bool copied;
+  final Widget? footer;
 
   @override
   Widget build(BuildContext context) {
@@ -409,102 +423,95 @@ class CalculationDisplay extends StatelessWidget {
     );
     final caption = error ?? result;
     final copy = error == null ? onCopy : null;
-    return DecoratedBox(
-      decoration: BoxDecoration(
-        border: Border.all(
-          color: error == null ? colors.outlineVariant : colors.error,
-        ),
-        borderRadius: BorderRadius.circular(12),
-      ),
-      child: Padding(
-        padding: const EdgeInsets.fromLTRB(8, 5, 2, 5),
-        child: LayoutBuilder(
-          builder: (context, constraints) => Column(
-            children: [
-              Expanded(
-                child: Align(
-                  alignment: Alignment.bottomRight,
-                  child: Semantics(
-                    label: strings.expression,
-                    child: ScrollConfiguration(
-                      behavior: const _ExpressionScrollBehavior(),
-                      child: TextField(
-                        controller: controller,
-                        focusNode: focusNode,
-                        onTap: onEdit,
-                        showCursor: !isResult,
-                        keyboardType: TextInputType.none,
-                        inputFormatters: [
-                          allowAdvancedInput
-                              ? _advancedExpressionFormatter
-                              : _expressionFormatter,
-                        ],
-                        autocorrect: false,
-                        enableSuggestions: false,
-                        maxLines: null,
-                        textAlign: TextAlign.right,
-                        scrollPadding: EdgeInsets.zero,
-                        cursorColor: colors.primary,
-                        style: expressionStyle,
-                        decoration: InputDecoration.collapsed(
-                          hintText: '0',
-                          hintStyle: expressionStyle,
-                        ),
+    final body = Padding(
+      padding: const EdgeInsets.fromLTRB(8, 5, 2, 5),
+      child: LayoutBuilder(
+        builder: (context, constraints) => Column(
+          children: [
+            Expanded(
+              child: Align(
+                alignment: Alignment.bottomRight,
+                child: Semantics(
+                  label: strings.expression,
+                  child: ScrollConfiguration(
+                    behavior: const _ExpressionScrollBehavior(),
+                    child: TextField(
+                      controller: controller,
+                      focusNode: focusNode,
+                      onTap: onEdit,
+                      showCursor: !isResult,
+                      keyboardType: TextInputType.none,
+                      inputFormatters: [
+                        inputFormatter ??
+                            (allowAdvancedInput
+                                ? _advancedExpressionFormatter
+                                : _expressionFormatter),
+                      ],
+                      autocorrect: false,
+                      enableSuggestions: false,
+                      maxLines: null,
+                      textAlign: TextAlign.right,
+                      scrollPadding: EdgeInsets.zero,
+                      cursorColor: colors.primary,
+                      style: expressionStyle,
+                      decoration: InputDecoration.collapsed(
+                        hintText: '0',
+                        hintStyle: expressionStyle,
                       ),
                     ),
                   ),
                 ),
               ),
-              if (caption != null)
-                Padding(
-                  padding: const EdgeInsets.only(
-                    top: 2,
-                    right: _ExpressionScrollBehavior.gutterWidth,
-                  ),
-                  child: Semantics(
-                    label: error == null
-                        ? (isResult ? strings.result : strings.previewResult)
-                        : strings.calculationError,
-                    liveRegion: isResult || error != null,
-                    button: copy != null,
-                    onTapHint: copy == null ? null : strings.copyResult,
-                    child: GestureDetector(
-                      behavior: HitTestBehavior.opaque,
-                      onTap: copy,
-                      child: MouseRegion(
-                        cursor: copy == null
-                            ? MouseCursor.defer
-                            : SystemMouseCursors.click,
-                        child: Align(
-                          alignment: Alignment.centerRight,
-                          child: ConstrainedBox(
-                            constraints: BoxConstraints(
-                              maxHeight: constraints.maxHeight * 0.64,
-                            ),
-                            child: SingleChildScrollView(
-                              scrollDirection: Axis.horizontal,
-                              reverse: true,
-                              child: FittedBox(
-                                fit: BoxFit.scaleDown,
-                                alignment: Alignment.centerRight,
-                                child: Text(
-                                  caption,
-                                  maxLines: 1,
-                                  style: TextStyle(
-                                    color: error != null
-                                        ? colors.error
-                                        : (isResult
-                                              ? colors.onSurface
-                                              : colors.onSurfaceVariant),
-                                    fontSize: isResult
-                                        ? largeFontSize
-                                        : smallFontSize,
-                                    fontWeight: isResult
-                                        ? FontWeight.w600
-                                        : FontWeight.w400,
-                                    fontFeatures: _tabularFigures,
-                                    height: 1.12,
-                                  ),
+            ),
+            if (caption != null)
+              Padding(
+                padding: const EdgeInsets.only(
+                  top: 2,
+                  right: _ExpressionScrollBehavior.gutterWidth,
+                ),
+                child: Semantics(
+                  label: error == null
+                      ? (isResult ? strings.result : strings.previewResult)
+                      : strings.calculationError,
+                  liveRegion: isResult || error != null,
+                  button: copy != null,
+                  onTapHint: copy == null ? null : strings.copyResult,
+                  child: GestureDetector(
+                    behavior: HitTestBehavior.opaque,
+                    onTap: copy,
+                    child: MouseRegion(
+                      cursor: copy == null
+                          ? MouseCursor.defer
+                          : SystemMouseCursors.click,
+                      child: Align(
+                        alignment: Alignment.centerRight,
+                        child: ConstrainedBox(
+                          constraints: BoxConstraints(
+                            maxHeight: constraints.maxHeight * 0.64,
+                          ),
+                          child: SingleChildScrollView(
+                            scrollDirection: Axis.horizontal,
+                            reverse: true,
+                            child: FittedBox(
+                              fit: BoxFit.scaleDown,
+                              alignment: Alignment.centerRight,
+                              child: Text(
+                                caption,
+                                maxLines: 1,
+                                style: TextStyle(
+                                  color: error != null
+                                      ? colors.error
+                                      : (isResult
+                                            ? colors.onSurface
+                                            : colors.onSurfaceVariant),
+                                  fontSize: isResult
+                                      ? largeFontSize
+                                      : smallFontSize,
+                                  fontWeight: isResult
+                                      ? FontWeight.w600
+                                      : FontWeight.w400,
+                                  fontFeatures: _tabularFigures,
+                                  height: 1.12,
                                 ),
                               ),
                             ),
@@ -514,10 +521,54 @@ class CalculationDisplay extends StatelessWidget {
                     ),
                   ),
                 ),
-            ],
-          ),
+              ),
+          ],
         ),
       ),
+    );
+    final borderRadius = BorderRadius.circular(12);
+    final display = DecoratedBox(
+      position: footer == null
+          ? DecorationPosition.background
+          : DecorationPosition.foreground,
+      decoration: BoxDecoration(
+        border: Border.all(
+          color: error == null ? colors.outlineVariant : colors.error,
+        ),
+        borderRadius: borderRadius,
+      ),
+      child: footer == null
+          ? body
+          : ClipRRect(
+              borderRadius: borderRadius,
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.stretch,
+                children: [
+                  Expanded(child: body),
+                  footer!,
+                ],
+              ),
+            ),
+    );
+    if (!copied) return display;
+    return Stack(
+      fit: StackFit.expand,
+      children: [
+        display,
+        Positioned(
+          top: 5,
+          left: 8,
+          child: IgnorePointer(
+            child: Semantics(
+              liveRegion: true,
+              child: Text(
+                strings.copied,
+                style: TextStyle(color: colors.primary, fontSize: 12),
+              ),
+            ),
+          ),
+        ),
+      ],
     );
   }
 }
@@ -554,7 +605,7 @@ class CalculatorKeypad extends StatelessWidget {
             children: [
               for (final symbol in row)
                 Expanded(
-                  child: _KeyButton(
+                  child: CalculatorKeyButton(
                     key: ValueKey('key-$symbol'),
                     symbol: symbol,
                     onTap: () => onKey(symbol),
@@ -568,51 +619,74 @@ class CalculatorKeypad extends StatelessWidget {
   );
 }
 
-class _KeyButton extends StatelessWidget {
-  const _KeyButton({
+enum CalculatorKeyRole { digit, operator, edit, equals }
+
+class CalculatorKeyButton extends StatelessWidget {
+  const CalculatorKeyButton({
     super.key,
     required this.symbol,
     required this.onTap,
     this.onLongPress,
+    this.role,
+    this.semanticLabel,
   });
 
   final String symbol;
-  final VoidCallback onTap;
+  final VoidCallback? onTap;
   final VoidCallback? onLongPress;
+  final CalculatorKeyRole? role;
+  final String? semanticLabel;
 
   @override
   Widget build(BuildContext context) {
     final strings = AppStrings.of(context);
     final colors = Theme.of(context).colorScheme;
-    final (background, foreground, label) = switch (symbol) {
-      'C' => (colors.errorContainer, colors.onErrorContainer, strings.clear),
-      '⌫' => (
+    final kind =
+        role ??
+        switch (symbol) {
+          'C' || '⌫' => CalculatorKeyRole.edit,
+          '%' || '÷' || '×' || '−' || '+' => CalculatorKeyRole.operator,
+          '=' => CalculatorKeyRole.equals,
+          _ => CalculatorKeyRole.digit,
+        };
+    final (background, foreground) = switch (kind) {
+      CalculatorKeyRole.edit => (
         colors.errorContainer,
         colors.onErrorContainer,
-        strings.backspace,
       ),
-      '%' => (
+      CalculatorKeyRole.operator => (
         colors.secondaryContainer,
         colors.onSecondaryContainer,
-        strings.percent,
       ),
-      '÷' ||
-      '×' ||
-      '−' ||
-      '+' => (colors.secondaryContainer, colors.onSecondaryContainer, symbol),
-      '=' => (colors.primary, colors.onPrimary, strings.equals),
-      _ => (colors.surfaceContainerHighest, colors.onSurface, symbol),
+      CalculatorKeyRole.equals => (colors.primary, colors.onPrimary),
+      CalculatorKeyRole.digit => (
+        colors.surfaceContainerHighest,
+        colors.onSurface,
+      ),
     };
+    final label =
+        semanticLabel ??
+        switch (symbol) {
+          'C' when kind == CalculatorKeyRole.edit => strings.clear,
+          '⌫' => strings.backspace,
+          '%' => strings.percent,
+          '=' => strings.equals,
+          _ => symbol,
+        };
+    final enabled = onTap != null;
 
     return Semantics(
       label: label,
       button: true,
+      enabled: enabled,
       onTap: onTap,
       onLongPress: onLongPress,
       hint: onLongPress == null ? null : strings.holdToSave,
       excludeSemantics: true,
       child: Material(
-        color: background,
+        color: enabled
+            ? background
+            : colors.surfaceContainerHighest.withValues(alpha: 0.70),
         borderRadius: BorderRadius.circular(10),
         clipBehavior: Clip.antiAlias,
         child: InkWell(
@@ -632,14 +706,25 @@ class _KeyButton extends StatelessWidget {
                     : Text(
                         symbol,
                         style: TextStyle(
-                          color: foreground,
+                          color: enabled
+                              ? foreground
+                              : foreground.withValues(alpha: 0.32),
                           fontSize: switch (symbol) {
-                            'C' => 18,
+                            'C' when kind == CalculatorKeyRole.edit => 18,
+                            'AC' ||
+                            'AND' ||
+                            'OR' ||
+                            'XOR' ||
+                            'NOT' ||
+                            'MOD' => 16,
                             '00' || '%' => 20,
                             '=' => 24,
                             _ => 22,
                           },
-                          fontWeight: symbol == '=' || symbol == 'C'
+                          fontWeight:
+                              kind == CalculatorKeyRole.equals ||
+                                  (kind == CalculatorKeyRole.edit &&
+                                      symbol != '⌫')
                               ? FontWeight.w600
                               : FontWeight.w500,
                           fontFeatures: _tabularFigures,

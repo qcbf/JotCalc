@@ -1,6 +1,8 @@
 import 'package:flutter/widgets.dart';
 import 'package:material_ui/material_ui.dart' show ThemeMode;
 
+import 'calculation.dart';
+
 enum AppLanguage {
   simplifiedChinese(Locale('zh', 'CN'), '简体中文'),
   english(Locale('en'), 'English');
@@ -30,6 +32,9 @@ class AppStrings {
       _isEnglish ? english : chinese;
 
   String get settings => _translate('设置', 'Settings');
+  String get calculatorMode => _translate('计算模式', 'Calculator mode');
+  String get standardMode => _translate('标准模式', 'Standard');
+  String get programmerMode => _translate('程序员模式', 'Programmer');
   String get language => _translate('语言', 'Language');
   String get theme => _translate('主题', 'Theme');
   String themeModeLabel(ThemeMode mode) => switch (mode) {
@@ -71,6 +76,14 @@ class AppStrings {
     '键盘支持括号、abs(-3) 和 pow(2, 8) 等写法。输入 17 mod 5 取模，位运算符有 &、|、^、~、<<、>>。',
     'Use the keyboard for parentheses, abs(-3), and pow(2, 8). Type 17 mod 5 for modulo. Bitwise operators are &, |, ^, ~, <<, and >>.',
   );
+  String get modeSwitchInstructions => _translate(
+    '按 Alt+1 切换到标准模式，按 Alt+2 切换到程序员模式。',
+    'Press Alt+1 for Standard or Alt+2 for Programmer.',
+  );
+  String get programmerInputInstructions => _translate(
+    '点击 HEX、DEC、OCT 或 BIN 可切换进制。程序员模式使用补码整数运算，DEC 显示有符号值。点击位面板中的 0 或 1 可翻转该位。',
+    'Select HEX, DEC, OCT, or BIN to change radix. Programmer mode uses two’s complement integers and shows signed values in DEC. Click a 0 or 1 in the bit panel to flip it.',
+  );
   String get about => _translate('关于', 'About');
   String get projectPage => _translate('GitHub 项目主页', 'JotCalc on GitHub');
   String get openProjectFailed =>
@@ -81,6 +94,8 @@ class AppStrings {
   String get clearHistory => _translate('清空历史记录', 'Clear history');
   String get clearHistoryConfirmation =>
       _translate('清空全部历史记录？', 'Clear all history?');
+  String get clearModeHistoryConfirmation =>
+      _translate('清空当前模式的历史记录？', 'Clear history for this mode?');
   String get noHistory => _translate('暂无记录', 'No history yet');
   String get resizeHistory => _translate('拖动调整历史栏宽度', 'Drag to resize history');
   String historyWidth(int percent) =>
@@ -102,6 +117,12 @@ class AppStrings {
       _translate('算式尚未输完', 'Incomplete expression');
   String get divisionByZero => _translate('不能除以零', 'Cannot divide by zero');
   String get invalidExpression => _translate('算式格式有误', 'Invalid expression');
+  String calculationIssueLabel(CalculationIssue issue) => switch (issue) {
+    CalculationIssue.incomplete => incompleteExpression,
+    CalculationIssue.divisionByZero => divisionByZero,
+    CalculationIssue.outOfRange => calculationOutOfRange,
+    CalculationIssue.invalid => invalidExpression,
+  };
   String get clear => _translate('清空', 'Clear');
   String get backspace => _translate('退格', 'Backspace');
   String get percent => _translate('百分号', 'Percent');
@@ -112,4 +133,21 @@ class AppStrings {
   String get copyFailed => _translate('无法复制结果', 'Could not copy the result');
   String get saveFailed =>
       _translate('无法保存设置或历史记录', 'Could not save settings or history');
+
+  String get numberBase => _translate('进制', 'Radix');
+  String get wordSize => _translate('字长', 'Word size');
+  String wordSizeBits(int bits) => _translate('$bits 位', '$bits bits');
+  String get programmerKeypad => _translate('键盘', 'Keypad');
+  String get bitPanel => _translate('位编辑', 'Bit editor');
+  String bitPosition(int position) =>
+      _translate('第 $position 位', 'Bit $position');
+  String get remainder => _translate('取余', 'Remainder');
+  String get changeSign => _translate('切换正负', 'Change sign');
+  String get bitwiseAnd => _translate('按位与', 'Bitwise AND');
+  String get bitwiseOr => _translate('按位或', 'Bitwise OR');
+  String get bitwiseXor => _translate('按位异或', 'Bitwise XOR');
+  String get bitwiseNot => _translate('按位取反', 'Bitwise NOT');
+  String get shiftLeft => _translate('左移', 'Left shift');
+  String get shiftRight => _translate('算术右移', 'Arithmetic right shift');
+  String get logicalShiftRight => _translate('逻辑右移', 'Logical right shift');
 }

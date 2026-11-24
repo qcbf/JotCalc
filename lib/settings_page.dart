@@ -1,3 +1,4 @@
+import 'package:flutter/foundation.dart' show defaultTargetPlatform;
 import 'package:flutter/services.dart';
 import 'package:material_ui/material_ui.dart';
 import 'package:url_launcher/url_launcher.dart';
@@ -27,6 +28,13 @@ class _SettingsPageState extends State<SettingsPage> {
   void _update(CalculatorSettings settings) {
     setState(() => _settings = settings);
     widget.onChanged(settings);
+  }
+
+  void _selectMode(CalculatorMode mode) {
+    if (mode != _settings.mode) {
+      widget.onChanged(_settings.copyWith(mode: mode));
+    }
+    Navigator.pop(context);
   }
 
   Future<T?> _chooseOption<T>({
@@ -95,6 +103,9 @@ class _SettingsPageState extends State<SettingsPage> {
               Text(instruction),
             if (widget.allowAdvancedInput)
               Text(strings.advancedInputInstructions),
+            if (defaultTargetPlatform == TargetPlatform.windows)
+              Text(strings.modeSwitchInstructions),
+            Text(strings.programmerInputInstructions),
           ],
         ),
         actions: [
@@ -133,6 +144,38 @@ class _SettingsPageState extends State<SettingsPage> {
         child: ListView(
           padding: const EdgeInsets.symmetric(vertical: 8),
           children: [
+            Padding(
+              padding: const EdgeInsets.fromLTRB(16, 6, 16, 8),
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                spacing: 6,
+                children: [
+                  Text(
+                    strings.calculatorMode,
+                    style: Theme.of(context).textTheme.titleSmall,
+                  ),
+                  Row(
+                    spacing: 8,
+                    children: [
+                      Expanded(
+                        child: _modeButton(
+                          CalculatorMode.standard,
+                          strings.standardMode,
+                          Icons.calculate_outlined,
+                        ),
+                      ),
+                      Expanded(
+                        child: _modeButton(
+                          CalculatorMode.programmer,
+                          strings.programmerMode,
+                          Icons.terminal_rounded,
+                        ),
+                      ),
+                    ],
+                  ),
+                ],
+              ),
+            ),
             ListTile(
               title: Text(strings.language),
               subtitle: Text(
@@ -180,6 +223,34 @@ class _SettingsPageState extends State<SettingsPage> {
               onTap: _openAbout,
             ),
           ],
+        ),
+      ),
+    );
+  }
+
+  Widget _modeButton(CalculatorMode mode, String label, IconData icon) {
+    final colors = Theme.of(context).colorScheme;
+    final selected = _settings.mode == mode;
+    return Semantics(
+      selected: selected,
+      child: OutlinedButton.icon(
+        onPressed: () => _selectMode(mode),
+        icon: Icon(icon, size: 18),
+        label: Text(label),
+        style: OutlinedButton.styleFrom(
+          minimumSize: const Size(0, 40),
+          tapTargetSize: MaterialTapTargetSize.shrinkWrap,
+          backgroundColor: selected ? colors.secondaryContainer : null,
+          foregroundColor: selected
+              ? colors.onSecondaryContainer
+              : colors.onSurface,
+          side: BorderSide(
+            color: selected ? colors.primary : colors.outlineVariant,
+          ),
+          shape: RoundedRectangleBorder(
+            borderRadius: BorderRadius.circular(10),
+          ),
+          padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 8),
         ),
       ),
     );

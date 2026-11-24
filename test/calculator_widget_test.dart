@@ -13,9 +13,14 @@ import 'package:flutter_test/flutter_test.dart';
 import 'package:jotcalc/calculator_store.dart';
 import 'package:jotcalc/calculator_widgets.dart';
 import 'package:jotcalc/main.dart';
+import 'package:jotcalc/programmer_calculation.dart';
+import 'package:jotcalc/programmer_panel.dart';
 import 'package:material_ui/material_ui.dart';
 
 Finder _key(String key) => find.byKey(ValueKey('key-$key'));
+Finder _programmerKey(String key) =>
+    find.byKey(ValueKey('programmer-key-$key'));
+Finder _radix(String radix) => find.byKey(ValueKey('programmer-radix-$radix'));
 Finder _historyText(String text) =>
     find.descendant(of: find.byType(HistoryPane), matching: find.text(text));
 
@@ -66,6 +71,193 @@ List<String> _captureClipboard() {
 }
 
 void main() {
+  testWidgets(
+    'chooses a mode directly in settings and restores it from storage',
+    (tester) async {
+      final saves = <CalculatorSnapshot>[];
+      await _start(
+        tester,
+        saves,
+        snapshot: CalculatorSnapshot.fromJson({
+          'settings': {
+            'persistHistory': false,
+            'portraitHistoryFraction': 0.25,
+          },
+        }),
+        size: const Size(320, 440),
+      );
+      expect(find.byType(CalculatorKeypad), findsOneWidget);
+
+      await tester.tap(find.byTooltip('设置'));
+      await tester.pumpAndSettle();
+      expect(
+        tester.getTopLeft(find.text('计算模式')).dy,
+        lessThan(tester.getTopLeft(find.text('语言')).dy),
+      );
+      expect(find.text('标准模式'), findsOneWidget);
+      await tester.tap(find.text('程序员模式'));
+      await tester.pumpAndSettle();
+      expect(find.byType(BackButton), findsNothing);
+      expect(find.byType(ProgrammerPanel), findsOneWidget);
+      final radixRow = tester.getTopLeft(_radix('dec')).dy;
+      for (final radix in ProgrammerRadix.values) {
+        final button = _radix(radix.name);
+        expect(button.hitTestable(), findsOneWidget);
+        expect(tester.getTopLeft(button).dy, radixRow);
+      }
+      expect(
+        tester.getBottomLeft(_programmerKey('=')).dy,
+        lessThanOrEqualTo(440),
+      );
+      tester.view.physicalSize = const Size(381, 452);
+      await tester.pumpAndSettle();
+      expect(find.byType(HistoryPane), findsOneWidget);
+      await tester.tap(find.byTooltip('位编辑'));
+      await tester.pumpAndSettle();
+      final display = tester.getRect(find.byType(CalculationDisplay));
+      final grid = tester.getRect(find.byType(Table));
+      final lowBit = find.byKey(const ValueKey('programmer-bit-0'));
+      final bit60 = tester.getRect(
+        find.byKey(const ValueKey('programmer-bit-60')),
+      );
+      final index60 = tester.getRect(find.text('60'));
+      expect(display.contains(tester.getCenter(_radix('hex'))), isTrue);
+      expect(grid.left, closeTo(display.left, 0.5));
+      expect(grid.right, closeTo(display.right, 0.5));
+      expect(index60.center.dy, closeTo(bit60.center.dy, 0.5));
+      expect(index60.left, greaterThan(bit60.right));
+      expect(lowBit.hitTestable(), findsOneWidget);
+      expect(tester.getBottomLeft(lowBit).dy, lessThanOrEqualTo(452));
+      expect(saves.single.settings.mode, CalculatorMode.programmer);
+      expect(saves.single.toJson().containsKey('history'), isFalse);
+
+      final restored = CalculatorSnapshot.fromJson(
+        jsonDecode(jsonEncode(saves.single.toJson())) as Map<String, dynamic>,
+      );
+      await _start(tester, saves, snapshot: restored);
+      expect(find.byType(ProgrammerPanel), findsOneWidget);
+      await tester.tap(find.byTooltip('设置'));
+      await tester.pumpAndSettle();
+      await tester.tap(find.text('标准模式'));
+      await tester.pumpAndSettle();
+      expect(find.byType(BackButton), findsNothing);
+      expect(find.byType(CalculatorKeypad), findsOneWidget);
+      expect(saves.last.settings.mode, CalculatorMode.standard);
+    },
+  );
+
+  testWidgets('Windows Alt shortcuts switch from focused input and settings', (
+    tester,
+  ) async {
+    final saves = <CalculatorSnapshot>[];
+    await _start(tester, saves);
+    await _press(tester, ['4', '+', '2']);
+
+    Future<void> switchWithAlt(LogicalKeyboardKey key) async {
+      await tester.sendKeyDownEvent(LogicalKeyboardKey.altLeft);
+      await tester.sendKeyEvent(key);
+      await tester.sendKeyUpEvent(LogicalKeyboardKey.altLeft);
+      await tester.pumpAndSettle();
+    }
+
+    await switchWithAlt(LogicalKeyboardKey.digit2);
+    expect(find.byType(ProgrammerPanel), findsOneWidget);
+    await tester.sendKeyEvent(LogicalKeyboardKey.digit5, character: '5');
+    await tester.sendKeyEvent(LogicalKeyboardKey.enter);
+    await tester.pumpAndSettle();
+    expect(_display(tester).result, '5');
+    expect(saves.last.history.single.programmerFormat, defaultProgrammerFormat);
+
+    await tester.tap(find.byTooltip('设置'));
+    await tester.pumpAndSettle();
+    await switchWithAlt(LogicalKeyboardKey.digit1);
+    expect(find.byType(BackButton), findsNothing);
+    expect(find.byType(CalculatorKeypad), findsOneWidget);
+    expect(_display(tester).controller.text, '4+2');
+    expect(saves.last.settings.mode, CalculatorMode.standard);
+    expect(_historyText('5'), findsNothing);
+
+    await switchWithAlt(LogicalKeyboardKey.digit2);
+    expect(_display(tester).result, '5');
+    expect(_historyText('DEC · QWORD'), findsOneWidget);
+  }, variant: const TargetPlatformVariant({TargetPlatform.windows}));
+
+  testWidgets(
+    'programmer keypad, radix, bits and history share the word size',
+    (tester) async {
+      final saves = <CalculatorSnapshot>[];
+      await _start(
+        tester,
+        saves,
+        size: const Size(960, 640),
+        snapshot: const CalculatorSnapshot(
+          settings: CalculatorSettings(mode: CalculatorMode.programmer),
+        ),
+      );
+
+      Future<void> tap(Finder finder) async {
+        await tester.tap(finder);
+        await tester.pumpAndSettle();
+      }
+
+      expect(
+        tester.widget<CalculatorKeyButton>(_programmerKey('F')).onTap,
+        isNull,
+      );
+      await tap(_radix('hex'));
+      await tap(find.byTooltip('字长'));
+      await tap(find.text('BYTE'));
+      for (final symbol in ['7', 'F', '+', '1', '=']) {
+        await tap(_programmerKey(symbol));
+      }
+      expect(_display(tester).result, '80');
+      for (final radix in ProgrammerRadix.values) {
+        final descendants = find.descendant(
+          of: _radix(radix.name),
+          matching: find.byType(Text),
+        );
+        expect(tester.widget<Text>(descendants).data, radix.label);
+      }
+      await tap(_radix('dec'));
+      expect(_display(tester).controller.text, '127+1');
+      expect(_display(tester).result, '−128');
+      await tap(_radix('oct'));
+      expect(_display(tester).controller.text, '177+1');
+      expect(_display(tester).result, '200');
+      await tap(_radix('bin'));
+      expect(_display(tester).controller.text, '1111111+1');
+      expect(_display(tester).result, '10000000');
+      await tap(_radix('hex'));
+      final restored = CalculatorSnapshot.fromJson(
+        jsonDecode(jsonEncode(saves.single.toJson())) as Map<String, dynamic>,
+      );
+      expect(restored.history.single.programmerFormat, (
+        radix: ProgrammerRadix.hex,
+        wordSize: ProgrammerWordSize.byte,
+      ));
+
+      await tap(find.text('位编辑'));
+      await tap(find.byKey(const ValueKey('programmer-bit-0')));
+      expect(_display(tester).result, '81');
+      await tap(find.byKey(const ValueKey('programmer-bit-7')));
+      expect(_display(tester).result, '1');
+      await tap(_radix('bin'));
+      await tap(find.text('键盘'));
+      expect(
+        tester.widget<CalculatorKeyButton>(_programmerKey('2')).onTap,
+        isNull,
+      );
+
+      await tester.tap(_historyText('80'));
+      await tester.pump(kDoubleTapMinTime);
+      await tester.tap(_historyText('80'));
+      await tester.pumpAndSettle();
+      expect(_display(tester).controller.text, '7F+1');
+      expect(_display(tester).result, '80');
+      expect(find.text('BYTE'), findsOneWidget);
+    },
+  );
+
   testWidgets(
     'tap into a confirmed expression and edit at the touched position',
     (tester) async {
@@ -643,6 +835,7 @@ void main() {
     await tester.pumpAndSettle();
     expect(find.text('Settings'), findsOneWidget);
     expect(find.text('Language'), findsOneWidget);
+    await tester.scrollUntilVisible(find.text('Show history'), 80);
     expect(find.text('Show history'), findsOneWidget);
     expect(find.byTooltip('Back'), findsOneWidget);
     await tester.tap(find.byType(BackButton));
@@ -670,6 +863,7 @@ void main() {
     await tester.tap(find.text('简体中文'));
     await tester.pumpAndSettle();
     expect(find.text('设置'), findsOneWidget);
+    await tester.scrollUntilVisible(find.text('显示历史记录'), 80);
     expect(find.text('显示历史记录'), findsOneWidget);
   });
 

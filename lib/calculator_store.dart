@@ -5,9 +5,13 @@ import 'package:material_ui/material_ui.dart' show ThemeMode;
 import 'package:shared_preferences/shared_preferences.dart';
 
 import 'app_localization.dart';
+import 'programmer_calculation.dart';
+
+enum CalculatorMode { standard, programmer }
 
 class CalculatorSettings {
   const CalculatorSettings({
+    this.mode = CalculatorMode.standard,
     this.language = AppLanguage.simplifiedChinese,
     this.themeMode = ThemeMode.system,
     this.persistHistory = true,
@@ -19,6 +23,10 @@ class CalculatorSettings {
 
   factory CalculatorSettings.fromJson(Map<String, dynamic> json) {
     return CalculatorSettings(
+      mode: CalculatorMode.values.firstWhere(
+        (mode) => mode.name == json['mode'],
+        orElse: () => CalculatorMode.standard,
+      ),
       language: AppLanguage.fromTag(json['language']),
       themeMode: ThemeMode.values.firstWhere(
         (mode) => mode.name == json['themeMode'],
@@ -38,6 +46,7 @@ class CalculatorSettings {
     );
   }
 
+  final CalculatorMode mode;
   final AppLanguage language;
   final ThemeMode themeMode;
   final bool persistHistory;
@@ -47,6 +56,7 @@ class CalculatorSettings {
   final double landscapeHistoryFraction;
 
   CalculatorSettings copyWith({
+    CalculatorMode? mode,
     AppLanguage? language,
     ThemeMode? themeMode,
     bool? persistHistory,
@@ -55,6 +65,7 @@ class CalculatorSettings {
     double? portraitHistoryFraction,
     double? landscapeHistoryFraction,
   }) => CalculatorSettings(
+    mode: mode ?? this.mode,
     language: language ?? this.language,
     themeMode: themeMode ?? this.themeMode,
     persistHistory: persistHistory ?? this.persistHistory,
@@ -68,6 +79,7 @@ class CalculatorSettings {
   );
 
   Map<String, Object> toJson() => {
+    'mode': mode.name,
     'language': language.locale.toLanguageTag(),
     'themeMode': themeMode.name,
     'persistHistory': persistHistory,
@@ -86,12 +98,25 @@ class CalculatorSettings {
 }
 
 class HistoryEntry {
-  const HistoryEntry({required this.expression, required this.result});
+  const HistoryEntry({
+    required this.expression,
+    required this.result,
+    this.programmerFormat,
+  });
 
   final String expression;
   final String result;
+  final ProgrammerFormat? programmerFormat;
 
-  Map<String, String> toJson() => {'expression': expression, 'result': result};
+  Map<String, Object> toJson() => {
+    'expression': expression,
+    'result': result,
+    if (programmerFormat case final format?)
+      'programmer': {
+        'radix': format.radix.name,
+        'wordSize': format.wordSize.name,
+      },
+  };
 }
 
 class CalculatorSnapshot {
@@ -113,7 +138,31 @@ class CalculatorSnapshot {
           'expression': final String expression,
           'result': final String result,
         }) {
-          entries.add(HistoryEntry(expression: expression, result: result));
+          ProgrammerFormat? programmerFormat;
+          if (item case {
+            'programmer': {
+              'radix': final String radixName,
+              'wordSize': final String wordSizeName,
+            },
+          }) {
+            final radix = ProgrammerRadix.values
+                .where((radix) => radix.name == radixName)
+                .firstOrNull;
+            final wordSize = ProgrammerWordSize.values
+                .where((size) => size.name == wordSizeName)
+                .firstOrNull;
+            if (radix == null || wordSize == null) continue;
+            programmerFormat = (radix: radix, wordSize: wordSize);
+          } else if (item case {'programmer': _}) {
+            continue;
+          }
+          entries.add(
+            HistoryEntry(
+              expression: expression,
+              result: result,
+              programmerFormat: programmerFormat,
+            ),
+          );
         }
       }
     }
