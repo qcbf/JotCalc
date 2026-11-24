@@ -591,7 +591,8 @@ class _CalculatorPageState extends State<CalculatorPage> {
       onPressed: _history.isEmpty ? null : _clearHistory,
       color: colors.onSurfaceVariant,
       padding: EdgeInsets.zero,
-      icon: const Icon(Icons.delete_outline),
+      iconSize: 20,
+      icon: const Icon(Icons.delete_outline_rounded),
     );
     return ColoredBox(
       color: colors.surface,

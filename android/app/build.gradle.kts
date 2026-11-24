@@ -1,4 +1,5 @@
-import java.io.FileInputStream
+import groovy.json.JsonException
+import groovy.json.JsonSlurper
 import java.util.Properties
 
 plugins {
@@ -7,9 +8,37 @@ plugins {
 }
 
 val keystorePropertiesFile = rootProject.file("key.properties")
-val keystoreProperties = Properties()
-if (keystorePropertiesFile.exists()) {
-    keystoreProperties.load(FileInputStream(keystorePropertiesFile))
+val localConfigFile = rootProject.file("../local.json")
+val keystoreProperties = when {
+    keystorePropertiesFile.isFile -> Properties().apply {
+        keystorePropertiesFile.inputStream().use(::load)
+    }
+    localConfigFile.isFile -> {
+        val localConfig = try {
+            JsonSlurper().parse(localConfigFile, "UTF-8") as? Map<*, *>
+        } catch (_: JsonException) {
+            null
+        } ?: throw GradleException("local.json must contain a valid JSON object.")
+
+        localConfig["Keystore"]?.let { settings ->
+            val keystore = settings as? Map<*, *>
+                ?: throw GradleException("Keystore in local.json must be an object.")
+
+            fun stringField(name: String, default: String? = null): String =
+                (keystore[name] ?: default) as? String
+                    ?: throw GradleException("Keystore.$name in local.json must be a string.")
+
+            val path = stringField("Path", "f.keystore")
+            val password = stringField("Password")
+            Properties().apply {
+                setProperty("storeFile", localConfigFile.toPath().resolveSibling(path).toString())
+                setProperty("storePassword", password)
+                setProperty("keyAlias", stringField("AliasName"))
+                setProperty("keyPassword", stringField("KeyPassword", "").ifEmpty { password })
+            }
+        }
+    }
+    else -> null
 }
 
 android {
@@ -31,7 +60,7 @@ android {
     }
 
     signingConfigs {
-        if (keystorePropertiesFile.exists()) {
+        if (keystoreProperties != null) {
             create("release") {
                 keyAlias = keystoreProperties["keyAlias"] as String
                 keyPassword = keystoreProperties["keyPassword"] as String
@@ -43,7 +72,7 @@ android {
 
     buildTypes {
         getByName("release") {
-            signingConfig = if (keystorePropertiesFile.exists()) {
+            signingConfig = if (keystoreProperties != null) {
                 signingConfigs.getByName("release")
             } else {
                 signingConfigs.getByName("debug")

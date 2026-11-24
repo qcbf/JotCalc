@@ -54,6 +54,24 @@ The release bundles the full CanvasKit runtime and removes other renderer varian
 
 ## Android
 
+For local release signing, put the keystore settings in `local.json` at the project root.
+
+```json
+{
+  "Keystore": {
+    "Path": "f.keystore",
+    "AliasName": "",
+    "Password": "",
+    "KeyPassword": ""
+  }
+}
+```
+
+`Path` defaults to `f.keystore`. Relative paths resolve from the directory containing
+`local.json`. Fill in `AliasName` and the keystore `Password`. Leave `KeyPassword`
+empty if the key uses the same password. `android/key.properties` takes precedence
+when present.
+
 Run `flutter build apk --release --split-per-abi --split-debug-info=build/android-symbols`. Select the device's architecture from the APKs in `build/app/outputs/flutter-apk`. Most recent Android phones use `arm64-v8a`. Android extracts the APK's compressed native libraries during installation. Keep `build/android-symbols` with the release if you need to symbolicate Dart stack traces.
 
 Sign APKs using the app's release key before distribution. Use `flutter build appbundle --release --split-debug-info=build/android-symbols` for Google Play. [Flutter Android signing guide](https://docs.flutter.dev/deployment/android#sign-the-app)
