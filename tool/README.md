@@ -16,6 +16,28 @@ release signing behavior unless the repository has these Actions secrets
 configured: `ANDROID_KEYSTORE_BASE64`, `ANDROID_KEY_ALIAS`,
 `ANDROID_KEY_PASSWORD`, and `ANDROID_STORE_PASSWORD`.
 
+## Windows batch scripts
+
+From the project root, these commands create local release files:
+
+```bat
+tool\build_web_release.bat
+tool\build_android_release.bat
+tool\build_release.bat
+```
+
+The combined script writes the Web ZIP to `build\jotcalc-web-release.zip` and
+the APKs and checksums to `build\release-assets`. Set `FLUTTER_ROOT` when Flutter
+is not on PATH, for example `set FLUTTER_ROOT=C:\src\flutter`.
+
+To create the version commit, tag, and GitHub Release build, run:
+
+```bat
+tool\publish_release.bat
+tool\publish_release.bat 1.0.0
+tool\publish_release.bat -WhatIf
+```
+
 ## Web
 
 Run `dart tool/build_web.dart` from the project root and publish the contents of `build/web-release`. For a site hosted under a path, pass the path with both slashes, for example `dart tool/build_web.dart /JotCalc/`.
