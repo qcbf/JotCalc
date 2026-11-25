@@ -34,8 +34,21 @@ int APIENTRY wWinMain(_In_ HINSTANCE instance, _In_opt_ HINSTANCE prev,
   }
   window.SetQuitOnClose(true);
 
+  const HWND handle = window.GetHandle();
+  constexpr LPARAM kKeyWasDown = 1L << 30;
   ::MSG msg;
   while (::GetMessage(&msg, nullptr, 0, 0)) {
+    if (msg.message == WM_KEYDOWN && msg.wParam == VK_ESCAPE &&
+        (msg.hwnd == handle || ::IsChild(handle, msg.hwnd)) &&
+        ::GetKeyState(VK_CONTROL) >= 0 && ::GetKeyState(VK_SHIFT) >= 0 &&
+        ::GetKeyState(VK_MENU) >= 0 && ::GetKeyState(VK_LWIN) >= 0 &&
+        ::GetKeyState(VK_RWIN) >= 0) {
+      if ((msg.lParam & kKeyWasDown) == 0) {
+        // Follow the title bar's close path before tearing down Flutter.
+        ::PostMessage(handle, WM_CLOSE, 0, 0);
+      }
+      continue;
+    }
     ::TranslateMessage(&msg);
     ::DispatchMessage(&msg);
   }

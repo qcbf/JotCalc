@@ -1,4 +1,4 @@
-import 'package:flutter/foundation.dart' show defaultTargetPlatform;
+import 'package:flutter/foundation.dart' show defaultTargetPlatform, kIsWeb;
 import 'package:flutter/services.dart';
 import 'package:material_ui/material_ui.dart';
 import 'package:package_info_plus/package_info_plus.dart';
@@ -107,6 +107,8 @@ class _SettingsPageState extends State<SettingsPage> {
               Text(strings.advancedInputInstructions),
             if (defaultTargetPlatform == TargetPlatform.windows)
               Text(strings.modeSwitchInstructions),
+            if (!kIsWeb && defaultTargetPlatform == TargetPlatform.windows)
+              Text(strings.closeWindowInstructions),
             Text(strings.programmerInputInstructions),
           ],
         ),

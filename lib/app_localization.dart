@@ -80,6 +80,8 @@ class AppStrings {
     '按 Alt+1 切换到标准模式，按 Alt+2 切换到程序员模式。',
     'Press Alt+1 for Standard or Alt+2 for Programmer.',
   );
+  String get closeWindowInstructions =>
+      _translate('按 Esc 关闭 JotCalc。', 'Press Esc to close JotCalc.');
   String get programmerInputInstructions => _translate(
     '点击 HEX、DEC、OCT 或 BIN 可切换进制。程序员模式使用补码整数运算，DEC 显示有符号值。点击位面板中的 0 或 1 可翻转该位。',
     'Select HEX, DEC, OCT, or BIN to change radix. Programmer mode uses two’s complement integers and shows signed values in DEC. Click a 0 or 1 in the bit panel to flip it.',
