@@ -2,7 +2,8 @@
 
 A tape-style calculator for Android, Windows x64, and the web, with Standard and Programmer modes and a history sidebar.
 
-[Download the latest release](https://github.com/qcbf/JotCalc/releases/latest)
+- [ Web ](https://calc.121233.xyz/)  
+- [Download the latest release](https://github.com/qcbf/JotCalc/releases/latest)
 
 ## Screenshots
 
