@@ -1,6 +1,7 @@
 import 'package:flutter/foundation.dart' show defaultTargetPlatform;
 import 'package:flutter/services.dart';
 import 'package:material_ui/material_ui.dart';
+import 'package:package_info_plus/package_info_plus.dart';
 import 'package:url_launcher/url_launcher.dart';
 
 import 'app_localization.dart';
@@ -24,6 +25,7 @@ class SettingsPage extends StatefulWidget {
 
 class _SettingsPageState extends State<SettingsPage> {
   late var _settings = widget.initialSettings;
+  late final _packageInfo = PackageInfo.fromPlatform();
 
   void _update(CalculatorSettings settings) {
     setState(() => _settings = settings);
@@ -219,7 +221,20 @@ class _SettingsPageState extends State<SettingsPage> {
             ListTile(
               title: Text(strings.about),
               subtitle: Text(strings.projectPage),
-              trailing: const Icon(Icons.open_in_new_rounded, size: 20),
+              trailing: FutureBuilder<PackageInfo>(
+                future: _packageInfo,
+                builder: (context, snapshot) {
+                  final version = snapshot.data?.version ?? '';
+                  return Row(
+                    mainAxisSize: MainAxisSize.min,
+                    spacing: 8,
+                    children: [
+                      if (version.isNotEmpty) Text(version),
+                      const Icon(Icons.open_in_new_rounded, size: 20),
+                    ],
+                  );
+                },
+              ),
               onTap: _openAbout,
             ),
           ],

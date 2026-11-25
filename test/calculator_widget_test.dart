@@ -16,6 +16,7 @@ import 'package:jotcalc/main.dart';
 import 'package:jotcalc/programmer_calculation.dart';
 import 'package:jotcalc/programmer_panel.dart';
 import 'package:material_ui/material_ui.dart';
+import 'package:package_info_plus/package_info_plus.dart';
 
 Finder _key(String key) => find.byKey(ValueKey('key-$key'));
 Finder _programmerKey(String key) =>
@@ -865,6 +866,27 @@ void main() {
     expect(find.text('设置'), findsOneWidget);
     await tester.scrollUntilVisible(find.text('显示历史记录'), 80);
     expect(find.text('显示历史记录'), findsOneWidget);
+  });
+
+  testWidgets('shows the app version in the About row', (tester) async {
+    PackageInfo.setMockInitialValues(
+      appName: 'JotCalc',
+      packageName: 'jotcalc',
+      version: '2.3.4',
+      buildNumber: '5',
+      buildSignature: '',
+    );
+    await _start(tester, []);
+
+    await tester.tap(find.byTooltip('设置'));
+    await tester.pumpAndSettle();
+    final about = find.widgetWithText(ListTile, '关于');
+    await tester.scrollUntilVisible(about, 80);
+    await tester.pumpAndSettle();
+    expect(
+      find.descendant(of: about, matching: find.text('2.3.4')),
+      findsOneWidget,
+    );
   });
 
   testWidgets('follows system theme and saves an explicit theme preference', (
