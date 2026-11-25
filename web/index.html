@@ -2,6 +2,7 @@
 <html lang="zh-CN">
 <head>
   <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
   <base href="$FLUTTER_BASE_HREF">
   <!-- release-preloads -->
   <meta name="description" content="带历史记录的随手记账计算器">
@@ -11,8 +12,80 @@
   <link rel="apple-touch-icon" href="icons/Icon-192.png">
   <link rel="manifest" href="manifest.json">
   <title>JotCalc</title>
+  <style>
+    #jotcalc-loading {
+      position: fixed;
+      inset: 0;
+      z-index: 1;
+      display: grid;
+      place-content: center;
+      justify-items: center;
+      gap: 0.5rem;
+      padding: 1.5rem;
+      background: #fff;
+      color: #5b6169;
+      font: 0.875rem/1.5 system-ui, sans-serif;
+      text-align: center;
+    }
+
+    #jotcalc-loading p {
+      margin: 0;
+    }
+
+    #jotcalc-loading progress {
+      width: min(15rem, 75vw);
+      height: 0.875rem;
+      accent-color: #0f6e6e;
+    }
+
+    @media (prefers-color-scheme: dark) {
+      #jotcalc-loading {
+        color-scheme: dark;
+        background: #15191c;
+        color: #b0b9bf;
+      }
+
+      #jotcalc-loading progress {
+        accent-color: #81d4c8;
+      }
+    }
+  </style>
 </head>
 <body>
-  <script src="flutter_bootstrap.js" async></script>
+  <div id="jotcalc-loading">
+    <p id="jotcalc-loading-status" role="status">正在加载 JotCalc…</p>
+    <progress aria-labelledby="jotcalc-loading-status" max="4" value="1"></progress>
+  </div>
+  <script>
+    (() => {
+      const loading = document.getElementById('jotcalc-loading');
+      const progress = loading.querySelector('progress');
+      const status = document.getElementById('jotcalc-loading-status');
+      const entrypointUrl = new URL('main.dart.js', document.baseURI).href;
+
+      function showLoadError() {
+        progress.hidden = true;
+        status.textContent = 'JotCalc 加载失败，请刷新页面重试。';
+      }
+
+      function handleScriptError(event) {
+        const script = event.target;
+        if (script instanceof HTMLScriptElement &&
+            (script.id === 'jotcalc-bootstrap' || script.src === entrypointUrl)) {
+          showLoadError();
+        }
+      }
+
+      window.addEventListener('error', handleScriptError, true);
+      // Renderer failures can reject promises outside Flutter's load callback.
+      window.addEventListener('unhandledrejection', showLoadError);
+      window.addEventListener('flutter-first-frame', () => {
+        window.removeEventListener('error', handleScriptError, true);
+        window.removeEventListener('unhandledrejection', showLoadError);
+        loading.remove();
+      }, { once: true });
+    })();
+  </script>
+  <script id="jotcalc-bootstrap" src="flutter_bootstrap.js" async></script>
 </body>
 </html>
